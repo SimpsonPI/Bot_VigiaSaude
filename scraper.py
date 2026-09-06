@@ -1,0 +1,291 @@
+import os
+import re
+import random
+import asyncio
+import logging
+import httpx
+from bs4 import BeautifulSoup
+from telegram.helpers import escape_markdown
+from config import URL_BUSCA_FMS, SCRAPER_KEY
+
+logger = logging.getLogger(__name__)
+
+def _extrair_valor_campo_fms(soup: BeautifulSoup, rotulo: str) -> str | None:
+    rotulo_normalizado = rotulo.strip().lower()
+    for titulo in soup.find_all(["h4", "h5"]):
+        if titulo.get_text(strip=True).lower() != rotulo_normalizado:
+            continue
+        paragrafo = titulo.find_next_sibling(["p", "div", "span"])
+        if paragrafo:
+            valor = paragrafo.get_text(strip=True)
+            if valor:
+                return valor
+    return None
+
+def _limpar_texto_alerta(alerta_bruto: str) -> str:
+    """Remove duplicidades internas, prefixos colados e formata a mensagem do portal."""
+    if not alerta_bruto:
+        return ""
+
+    # Remove ocorrências coladas como 'SituaçãoVencida' ou 'Situação: Vencida'
+    texto = re.sub(r"situação\s*:?\s*\w*", "", alerta_bruto, flags=re.IGNORECASE).strip()
+    
+    # Normaliza espaços
+    texto = re.sub(r"\s+", " ", texto)
+
+    # Identifica frases únicas e evita repetição idêntica
+    frases = [f.strip() for f in texto.split(".") if f.strip()]
+    frases_unicas = []
+    for f in frases:
+        if f.lower() not in [fu.lower() for fu in frases_unicas]:
+            frases_unicas.append(f)
+
+    return ". ".join(frases_unicas) + ("." if frases_unicas else "")
+
+def _extrair_dados_html(soup: BeautifulSoup) -> dict:
+    """Extrai e mapeia todos os campos da FMS com limpeza rigorosa de texto duplicado."""
+    card = soup.find("div", class_="card-body") or soup
+
+    # 1. Captura de Alertas, Avisos e Observações
+    alertas = [
+        re.sub(r"\s+", " ", a.get_text(" ", strip=True))
+        for a in card.find_all("div", class_=re.compile(r"alert|bg-success|alert-success|alert-danger|alert-warning|mensagem-observacao|obs", re.I))
+    ]
+    
+    textos_observacao = []
+    for elem in card.find_all(["p", "span", "div"]):
+        txt = elem.get_text(strip=True)
+        if any(termo in txt.upper() for termo in ["SOLICITAÇÃO CANCELADA", "COMPAREÇA", "UNIDADE BASICA", "UBS", "ESCLARECIMENTOS"]):
+            textos_observacao.append(re.sub(r"\s+", " ", txt))
+
+    # Junta todos os textos encontrados
+    todos_avisos = alertas + textos_observacao
+    alerta_concatenado = " ".join(todos_avisos) if todos_avisos else ""
+    
+    # Aplica a limpeza para tirar a duplicação
+    alerta_texto = _limpar_texto_alerta(alerta_concatenado) or None
+
+    # 2. Varredura de Títulos
+    campos_brutos = {}
+    dados_mapeados = {
+        "data_consulta": None,
+        "autorizacao": None,
+        "estabelecimento": None,
+        "endereco": None,
+        "telefone": None,
+        "situacao": None,
+        "posicao_fila": None,
+        "previsao_atendimento": None,
+    }
+
+    titulos = card.find_all(["h4", "h5"], class_=re.compile(r"card-title", re.I)) or card.find_all(["h4", "h5"])
+
+    for elem in titulos:
+        rotulo = elem.get_text(strip=True)
+        if not rotulo or "_" in rotulo:
+            continue
+
+        p = elem.find_next_sibling(["p", "span", "div"])
+        if not p and elem.parent:
+            p = elem.parent.find(["p", "span", "div"], class_=re.compile(r"card-text|badge", re.I))
+
+        if p:
+            valor = re.sub(r"\s+", " ", p.get_text(" ", strip=True)).strip()
+            if valor:
+                campos_brutos[rotulo] = valor
+                rotulo_lower = rotulo.lower()
+
+                if "data e hora" in rotulo_lower:
+                    dados_mapeados["data_consulta"] = valor
+                elif "autorização" in rotulo_lower:
+                    dados_mapeados["autorizacao"] = valor
+                elif "estabelecimento" in rotulo_lower:
+                    dados_mapeados["estabelecimento"] = valor
+                elif "endereço" in rotulo_lower:
+                    dados_mapeados["endereco"] = valor
+                elif "telefone" in rotulo_lower:
+                    dados_mapeados["telefone"] = valor
+                elif "situação" in rotulo_lower:
+                    dados_mapeados["situacao"] = valor
+                elif "posição" in rotulo_lower or "fila" in rotulo_lower:
+                    dados_mapeados["posicao_fila"] = valor
+                elif "previsão" in rotulo_lower:
+                    dados_mapeados["previsao_atendimento"] = valor
+
+    # 3. Determinação da Situação
+    situacao = dados_mapeados["situacao"] or campos_brutos.get("Situação") or _extrair_valor_campo_fms(soup, "Situação")
+
+    if not situacao:
+        if dados_mapeados["data_consulta"] or (alerta_texto and "MARCADO" in alerta_texto.upper()):
+            situacao = "MARCADA"
+        else:
+            situacao = "Informada no portal"
+
+    dados_mapeados["situacao"] = situacao
+    dados_mapeados["posicao_fila"] = dados_mapeados["posicao_fila"] or campos_brutos.get("Posição da Fila") or _extrair_valor_campo_fms(soup, "Posição da Fila") or "Não informada"
+    dados_mapeados["previsao_atendimento"] = dados_mapeados["previsao_atendimento"] or campos_brutos.get("Previsão de atendimento") or _extrair_valor_campo_fms(soup, "Previsão de atendimento") or "Não informada"
+
+    status_resumido = f"Situação: {situacao}"
+
+    return {
+        "sucesso": True,
+        "encontrado": True,
+        "situacao": situacao,
+        "posicao_fila": dados_mapeados["posicao_fila"],
+        "previsao_atendimento": dados_mapeados["previsao_atendimento"],
+        "data_consulta": dados_mapeados["data_consulta"],
+        "autorizacao": dados_mapeados["autorizacao"],
+        "estabelecimento": dados_mapeados["estabelecimento"],
+        "endereco": dados_mapeados["endereco"],
+        "telefone": dados_mapeados["telefone"],
+        "alerta_fms": alerta_texto,
+        "campos": campos_brutos,
+        "status_resumido": status_resumido,
+    }
+
+def formatar_data_br(data_str: str | None) -> str:
+    if not data_str:
+        return "Não informada"
+    data_limpa = str(data_str).split("T")[0].strip()
+    if "-" in data_limpa:
+        partes = data_limpa.split("-")
+        if len(partes) == 3:
+            return f"{partes[2]}/{partes[1]}/{partes[0]}"
+    return data_limpa
+
+def nome_paciente_exibicao(nome: str | None) -> str:
+    if not nome or not nome.strip() or nome.strip() == "Aguardando consulta":
+        return "Não informado"
+    return nome.strip()
+
+async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict:
+    atraso = random.uniform(1.0, 2.0)
+    await asyncio.sleep(atraso)
+
+    url_fms_target = f"{URL_BUSCA_FMS}?number_id={numero_reg}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    }
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=12.0, headers=headers) as client:
+            resposta = await client.get(url_fms_target)
+            if resposta.status_code == 200 and "nenhum registro" not in resposta.text.lower():
+                soup = BeautifulSoup(resposta.text, "html.parser")
+                return _extrair_dados_html(soup)
+    except Exception as e:
+        logger.info(f"Acesso direto à FMS falhou ou bloqueou ({e}). Acionando ScraperAPI...")
+
+    if not SCRAPER_KEY:
+        return {"sucesso": False, "mensagem": "Erro de configuração na chave do ScraperAPI."}
+
+    scraper_url = f"http://api.scraperapi.com?api_key={SCRAPER_KEY}&url={url_fms_target}"
+
+    for tentativa in range(1, max_tentativas + 1):
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=45.0) as client:
+                resposta = await client.get(scraper_url)
+
+                if resposta.status_code != 200:
+                    if tentativa < max_tentativas:
+                        await asyncio.sleep(2)
+                        continue
+                    return {"sucesso": False, "mensagem": f"Erro HTTP {resposta.status_code}"}
+
+                soup = BeautifulSoup(resposta.text, "html.parser")
+                texto_pagina = soup.get_text().lower()
+
+                if "nenhum registro" in texto_pagina or "não encontrado" in texto_pagina:
+                    return {
+                        "sucesso": False,
+                        "mensagem": f"⚠️ A regulação *{numero_reg}* não foi encontrada no portal da FMS."
+                    }
+
+                return _extrair_dados_html(soup)
+
+        except (httpx.TimeoutException, httpx.RequestError) as e:
+            logger.warning(f"Tentativa ScraperAPI {tentativa}/{max_tentativas} falhou (Reg {numero_reg}): {e}")
+            if tentativa < max_tentativas:
+                await asyncio.sleep(2)
+
+    return {"sucesso": False, "mensagem": "Tempo limite de conexão excedido ao acessar a FMS."}
+
+async def consultar_status_sus(numero_reg: str) -> str | None:
+    try:
+        resultado = await consultar_status_fms(numero_reg)
+        if isinstance(resultado, dict) and resultado.get("sucesso"):
+            return resultado.get("situacao") or "Informada no portal"
+        return None
+    except Exception as e:
+        logger.error(f"Erro na consulta simplificada de status SUS para {numero_reg}: {e}")
+        return None
+
+def montar_mensagem_regulacao(
+    numero_reg: str,
+    resultado: dict,
+    nome_paciente: str | None = None,
+    data_nascimento: str | None = None,
+    email: str | None = None,
+    titulo: str = "🏥 *SITUAÇÃO DA REGULAÇÃO*",
+) -> str:
+    nome_esc = escape_markdown(nome_paciente_exibicao(nome_paciente), version=1)[cite: 2]
+    numero_esc = escape_markdown(str(numero_reg), version=1)[cite: 2]
+    dt_esc = escape_markdown(formatar_data_br(data_nascimento), version=1)[cite: 2]
+    email_txt = email.strip() if email else "Não informado"[cite: 2]
+    email_esc = escape_markdown(email_txt, version=1)[cite: 2]
+
+    linhas = [
+        titulo,
+        "",
+        f"👤 *Paciente:* *{nome_esc}*",
+        f"🎂 *Data de Nascimento:* {dt_esc}",
+        f"📧 *E-mail:* {email_esc}",
+        f"🆔 *ID de Regulação:* `{numero_esc}`",
+    ]
+
+    if isinstance(resultado, dict):
+        situacao = resultado.get("situacao") or "Informada no portal"[cite: 2]
+        data_consulta = resultado.get("data_consulta")[cite: 2]
+        autorizacao = resultado.get("autorizacao")[cite: 2]
+        estabelecimento = resultado.get("estabelecimento")[cite: 2]
+        endereco = resultado.get("endereco")[cite: 2]
+        telefone = resultado.get("telefone")[cite: 2]
+        alerta = resultado.get("alerta_fms")[cite: 2]
+        posicao = resultado.get("posicao_fila") or "Não informada"[cite: 2]
+        previsao = resultado.get("previsao_atendimento") or "Não informada"[cite: 2]
+
+        # 1. Exibe o Status primeiro
+        linhas.append(f"📌 *Situação:* *{escape_markdown(str(situacao), version=1)}*")
+
+        if data_consulta or estabelecimento:
+            linhas.append("")
+            linhas.append("📅 *DADOS DO AGENDAMENTO*")[cite: 2]
+            if data_consulta:
+                linhas.append(f"• *Data/Hora:* {escape_markdown(str(data_consulta), version=1)}")[cite: 2]
+            if autorizacao:
+                linhas.append(f"• *Autorização:* `{escape_markdown(str(autorizacao), version=1)}`")[cite: 2]
+
+            linhas.append("")
+            linhas.append("🏥 *LOCAL DO ATENDIMENTO*")[cite: 2]
+            if estabelecimento:
+                linhas.append(f"• *Local:* {escape_markdown(str(estabelecimento), version=1)}")[cite: 2]
+            if endereco:
+                linhas.append(f"• *Endereço:* {escape_markdown(str(endereco), version=1)}")[cite: 2]
+            if telefone:
+                linhas.append(f"• *Telefone:* {escape_markdown(str(telefone), version=1)}")[cite: 2]
+
+            if alerta:
+                linhas.append("")
+                linhas.append(f"⚠️ *AVISO DO PORTAL:* _{escape_markdown(str(alerta), version=1)}_")[cite: 2]
+        else:
+            # 2. Exibe a Posição logo após o status/situação e antes da previsão
+            linhas.append(f"• *Posição:* {escape_markdown(str(posicao), version=1)}")
+            linhas.append(f"• *Previsão:* {escape_markdown(str(previsao), version=1)}")
+
+            if alerta and alerta.strip():
+                linhas.append("")
+                linhas.append(f"⚠️ *MENSAGEM DO PORTAL:*\n_{escape_markdown(str(alerta.strip()), version=1)}_")[cite: 2]
+
+    return "\n".join(linhas)[cite: 2]

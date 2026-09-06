@@ -1,0 +1,235 @@
+import os
+import json
+import logging
+import httpx
+from telegram import Update
+from telegram.ext import ContextTypes
+from database import supabase
+from datetime import datetime, timedelta
+
+ADMIN_ID = int(os.getenv("ADMIN_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+NOME_ADMIN = os.getenv("NOME_ADMIN", "Sr. Lincoln")
+
+logger = logging.getLogger(__name__)
+
+# URL base para leitura de arquivos do GitHub
+GITHUB_BASE_URL = "https://raw.githubusercontent.com/SimpsonPI/central_alertasus_2.5/main/"
+
+# Arquivos de conhecimento que a IA deve carregar automaticamente
+ARQUIVOS_CONHECIMENTO = ["conhecimento.md"]
+
+TABELAS_PERMITIDAS = ["assinaturas", "AlertaSUS_2.0", "pagamentos_pix", "lgpd_consentimentos"]
+
+SAUDACOES = [
+    "olá", "oi", "bom dia", "boa tarde", "boa noite", "tudo bem",
+    "hello", "hey", "e aí", "como vai", "opa", "salve"
+]
+
+PALAVRAS_CHAVE = [
+    "resumo", "estatísticas", "quantos", "dados da tabela", "ler arquivo",
+    "verificar regulação", "minha regulação", "total", "listar", "relatório",
+    "vencimento", "pagamentos", "usuários ativos", "inativos", "status",
+    "consulta", "plano", "assinatura", "bloqueado", "pendente", "pix", "custa"
+]
+
+PALAVRAS_NOVIDADES = [
+    "novidades", "mudanças recentes", "o que mudou", "últimas", "recentes",
+    "novos cadastros", "novas regulações", "atualizações hoje"
+]
+
+async def obter_conhecimento() -> str:
+    """Busca o conteúdo dos arquivos de conhecimento no GitHub."""
+    conhecimento = ""
+    for arquivo in ARQUIVOS_CONHECIMENTO:
+        try:
+            url = f"{GITHUB_BASE_URL}{arquivo}"
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(url)
+                if response.status_code == 200:
+                    conhecimento += f"\n\n--- CONTEÚDO DO ARQUIVO: {arquivo} ---\n{response.text[:4000]}"
+        except Exception as e:
+            logger.error(f"Erro ao ler arquivo de conhecimento: {e}")
+    return conhecimento
+
+async def chamar_groq(system_prompt: str, user_message: str) -> str:
+    if not GROQ_API_KEY:
+        return "❌ GROQ_API_KEY não configurada."
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+    payload = {
+        "model": "openai/gpt-oss-120b",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message}
+        ],
+        "temperature": 0.2
+    }
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+    except Exception as e:
+        logger.error(f"Erro ao chamar Groq: {e}")
+        return f"❌ Erro na chamada à IA: {str(e)}"
+
+async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if not update.message or not update.message.text:
+        return
+
+    user_message = update.message.text
+    user_text_lower = user_message.lower()
+
+    # 1. Se for saudação, conversa normal (sem consultar dados)
+    if any(saudacao in user_text_lower for saudacao in SAUDACOES):
+        prompt_conversa = (
+            f"Você é o VS, assistente do {NOME_ADMIN}. "
+            f"O usuário é {NOME_ADMIN}. "
+            "Responda de forma amigável e curta. NUNCA invente informações."
+        )
+        resposta = await chamar_groq(prompt_conversa, user_message)
+        try:
+            await update.message.reply_text(resposta, parse_mode=None)
+        except Exception as e:
+            logger.error(f"Erro ao enviar resposta: {e}")
+        return
+
+    # 2. Se for pergunta sobre "novidades", consulta banco de dados
+    if any(palavra in user_text_lower for palavra in PALAVRAS_NOVIDADES):
+        try:
+            agora = datetime.utcnow()
+            inicio = agora - timedelta(days=1)
+            novas_regulacoes = supabase.table("AlertaSUS_2.0").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count
+            novas_assinaturas = supabase.table("assinaturas").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count
+            novos_pagamentos = supabase.table("pagamentos_pix").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count
+            dados = (f"Nas últimas 24 horas: {novas_regulacoes} novas regulações, {novas_assinaturas} novas assinaturas, {novos_pagamentos} novos pagamentos.")
+
+            # Carrega conhecimento do GitHub
+            conhecimento = await obter_conhecimento()
+            prompt = (
+                f"Você é o VS, assistente do {NOME_ADMIN}. "
+                f"O administrador pediu: '{user_message}'. "
+                f"Dados reais do banco: {dados}. "
+                f"Informações do sistema: {conhecimento}. "
+                "Responda de forma amigável e organizada. Use apenas dados reais."
+            )
+            resposta_final = await chamar_groq(prompt, "Formate a resposta.")
+        except Exception as e:
+            logger.error(f"Erro ao buscar novidades: {e}")
+            resposta_final = "❌ Não consegui buscar as novidades."
+
+        try:
+            await update.message.reply_text(resposta_final, parse_mode=None)
+        except Exception as e:
+            logger.error(f"Erro ao enviar resposta: {e}")
+        return
+
+    # 3. Se for pedido administrativo (ou pergunta sobre preços/planos), consulta tudo
+    if not any(palavra in user_text_lower for palavra in PALAVRAS_CHAVE):
+        # Conversa casual sem consulta
+        prompt_conversa = (
+            f"Você é o VS, assistente do {NOME_ADMIN}. "
+            f"O usuário é {NOME_ADMIN}. "
+            "Responda de forma amigável e curta. NUNCA invente informações."
+        )
+        resposta = await chamar_groq(prompt_conversa, user_message)
+        try:
+            await update.message.reply_text(resposta, parse_mode=None)
+        except Exception as e:
+            logger.error(f"Erro ao enviar resposta: {e}")
+        return
+
+    # 4. Carrega automaticamente o conhecimento do GitHub e consulta o Supabase
+    conhecimento = await obter_conhecimento()
+
+    prompt_deteccao = (
+        f"Você é o VS, assistente do {NOME_ADMIN}. Identifique a ação que o administrador deseja executar. "
+        "Responda APENAS com um JSON válido: "
+        "{\"acao\": \"consultar\" | \"ler_arquivo\" | \"resumo\", "
+        "\"tabela\": \"nome_da_tabela\", "
+        "\"filtros\": {\"campo\": \"valor\"}, "
+        "\"arquivo\": \"nome_do_arquivo\"} "
+        "Tabelas disponíveis: assinaturas, AlertaSUS_2.0, pagamentos_pix, lgpd_consentimentos. "
+        "Para perguntas sobre preços de planos, use a ação 'resumo' (a informação está no conhecimento). "
+        "Se não souber, retorne {\"acao\": \"resumo\"}."
+    )
+
+    resposta_ia = await chamar_groq(prompt_deteccao, user_message)
+
+    try:
+        data = json.loads(resposta_ia)
+        acao = data.get("acao", "resumo")
+        tabela = data.get("tabela", "")
+        filtros = data.get("filtros", {})
+        arquivo = data.get("arquivo", "")
+
+        if tabela and tabela not in TABELAS_PERMITIDAS:
+            tabela = "assinaturas"
+
+        dados_brutos = ""
+
+        if acao == "consultar":
+            try:
+                query = supabase.table(tabela).select("*")
+                if filtros:
+                    for campo, valor in filtros.items():
+                        query = query.eq(campo, valor)
+                res = query.limit(20).execute()
+                dados_brutos = json.dumps(res.data, ensure_ascii=False, indent=2)
+            except Exception as e:
+                logger.error(f"Erro ao consultar tabela {tabela}: {e}")
+                dados_brutos = f"Erro: {str(e)}"
+
+        elif acao == "ler_arquivo":
+            try:
+                url = f"{GITHUB_BASE_URL}{arquivo}"
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(url)
+                    if response.status_code == 200:
+                        dados_brutos = response.text[:3000]
+                    else:
+                        dados_brutos = f"Arquivo não encontrado (status {response.status_code})."
+            except Exception as e:
+                logger.error(f"Erro ao ler arquivo: {e}")
+                dados_brutos = f"Erro: {str(e)}"
+
+        elif acao == "resumo":
+            try:
+                total_assinaturas = supabase.table("assinaturas").select("*", count="exact").execute().count
+                total_regulacoes = supabase.table("AlertaSUS_2.0").select("*", count="exact").execute().count
+                total_pix_pendentes = supabase.table("pagamentos_pix").select("*", count="exact").eq("status", "pending").execute().count
+                dados_brutos = f"Total assinaturas: {total_assinaturas}. Total regulações: {total_regulacoes}. Pagamentos pendentes: {total_pix_pendentes}."
+            except Exception as e:
+                logger.error(f"Erro ao gerar resumo: {e}")
+                dados_brutos = f"Erro: {str(e)}"
+
+        # Formata a resposta com TODAS as informações (banco + conhecimento)
+        prompt_formatacao = (
+            f"Você é o VS, assistente do {NOME_ADMIN}. "
+            f"O administrador pediu: '{user_message}'. "
+            f"Dados do banco: {dados_brutos}. "
+            f"Conhecimento do sistema: {conhecimento}. "
+            "Responda de forma amigável e completa. Se a pergunta for sobre preços ou planos, "
+            "use as informações do conhecimento. Trate o administrador como 'Sr. Lincoln'."
+        )
+        resposta_final = await chamar_groq(prompt_formatacao, "Formate a resposta acima.")
+
+    except json.JSONDecodeError:
+        # Se não for JSON, usa a resposta da IA como está (mas adiciona conhecimento)
+        prompt_formatacao = (
+            f"Você é o VS, assistente do {NOME_ADMIN}. "
+            f"O administrador pediu: '{user_message}'. "
+            f"Conhecimento do sistema: {conhecimento}. "
+            "Responda de forma amigável e completa. Trate o administrador como 'Sr. Lincoln'."
+        )
+        resposta_final = await chamar_groq(prompt_formatacao, "Responda a pergunta.")
+
+    try:
+        await update.message.reply_text(resposta_final, parse_mode=None)
+    except Exception as e:
+        logger.error(f"Erro ao enviar resposta: {e}")
+        await update.message.reply_text("Desculpe, tive um problema ao processar sua solicitação.")
