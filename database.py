@@ -58,7 +58,7 @@ def verificar_assinatura_ativa(user_id: int) -> bool:
 
         assinatura = res.data[0]
 
-        if assinatura.get("status") != "active":
+        if str(assinatura.get("status", "")).lower() not in ("ativo", "active", "ativa"):
             return False
 
         if assinatura.get("tipo_plano") == "cortesia":

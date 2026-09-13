@@ -31,7 +31,7 @@ async def comando_estatisticas(update: Update, context: ContextTypes.DEFAULT_TYP
         res_assinaturas = supabase.table("assinaturas").select("*", count="exact").execute()
         total_assinaturas = res_assinaturas.count if hasattr(res_assinaturas, 'count') else len(res_assinaturas.data)
 
-        res_ativos = supabase.table("assinaturas").select("tipo_plano", count="exact").eq("status", "active").execute()
+        res_ativos = supabase.table("assinaturas").select("tipo_plano", count="exact").eq("status", "ativo").execute()
         total_ativos = res_ativos.count if hasattr(res_ativos, 'count') else len(res_ativos.data)
 
         res_regulacoes = supabase.table("AlertaSUS_2.0").select("*", count="exact").execute()
