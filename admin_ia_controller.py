@@ -137,8 +137,22 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
             await update.message.reply_text(resposta, parse_mode=None)
         return
 
-    # 4. Carrega conhecimento e executa consulta
-    conhecimento = await obter_conhecimento()
+    # 4. Carrega conhecimento (com FALLBACK)
+    conhecimento = ""
+    try:
+        conhecimento = await obter_conhecimento()
+    except Exception as e:
+        logger.error(f"Erro ao obter conhecimento: {e}")
+        conhecimento = ""
+
+    # 🔄 FALLBACK: Se o conhecimento do GitHub falhar, usa esta descrição básica
+    if not conhecimento:
+        conhecimento = (
+            "O VigiaSaúde é um serviço independente que monitora regulações de saúde (consultas e exames) "
+            "no SUS de Teresina-PI. Ele avisa o usuário quando há mudança no status da regulação. "
+            "Planos: Degustação (7 dias grátis), Trimestral (R$ 9,99) e Semestral (R$ 14,99). "
+            "Cadastro: Número do SUS, Nome, Celular, Data de nascimento, ID da Regulação, CBO e Procedimento."
+        )
 
     prompt_deteccao = (
         f"Você é o VS, assistente do {NOME_ADMIN}. Identifique a ação que o administrador deseja executar. "
@@ -205,6 +219,7 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"Você é o VS, assistente do {NOME_ADMIN}. "
             f"O administrador pediu: '{user_message}'. "
             f"Dados do banco: {dados_brutos}. "
+            f"Conhecimento do sistema: {conhecimento}. "
             "Responda de forma EXTREMAMENTE OBJETIVA. Apenas traga os dados solicitados. "
             "Não explique o que é o sistema. Não adicione textos extras. "
             "Se for uma lista, formate como lista curta. Se forem números, apenas mostre os números."
@@ -215,6 +230,7 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
         prompt_formatacao = (
             f"Você é o VS, assistente do {NOME_ADMIN}. "
             f"O administrador pediu: '{user_message}'. "
+            f"Conhecimento do sistema: {conhecimento}. "
             "Responda de forma amigável e curta. NUNCA invente informações."
         )
         resposta_final = await chamar_groq(prompt_formatacao, "Responda a pergunta.")
