@@ -214,7 +214,6 @@ def usuario_tem_acesso(plano_info: dict) -> bool:
     is_degustacao = tipo_plano == "degustacao"
     return is_cortesia or (is_degustacao and (usou_degustacao or status_bruto == "ativo")) or (status_bruto == "ativo")
 
-
 async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     chat_id_str = str(user_id)
@@ -232,9 +231,35 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_ativo = usuario_tem_acesso(plano_info)
 
     if is_ativo and not is_degustacao:
-        tipo_formatado = "Cortesia VIP 👑" if is_cortesia else f"Pro ({tipo_plano.capitalize()})"
-        limite = plano_info.get("limite_ids", "Ilimitado")
-        texto = f"✨ <b>Sua Assinatura está Ativa!</b>\n\n• <b>Plano:</b> {tipo_formatado}\n• <b>Status:</b> Ativo 🟢\n• <b>Limite:</b> {limite}"
+        nomes_planos = {
+            "pro": "Pro",
+            "pro_trimestral": "Pro Trimestral",
+            "trimestral": "Pro Trimestral",
+            "pro_semestral": "Pro Semestral",
+            "semestral": "Pro Semestral",
+            "cortesia": "Cortesia VIP 👑",
+        }
+        tipo_formatado = nomes_planos.get(tipo_plano, "Pro")
+        limite = plano_info.get("limite_ids") or "Ilimitado"
+
+        venc = plano_info.get("data_vencimento")
+        if venc:
+            try:
+                from datetime import datetime as _dt
+                data_v = _dt.fromisoformat(str(venc).replace("Z", "+00:00"))
+                venc_txt = data_v.strftime("%d/%m/%Y")
+            except Exception:
+                venc_txt = "—"
+        else:
+            venc_txt = "Sem vencimento" if is_cortesia else "—"
+
+        texto = (
+            "✨ <b>Sua Assinatura está Ativa!</b>\n\n"
+            f"• <b>Plano:</b> {tipo_formatado}\n"
+            "• <b>Status:</b> Ativo 🟢\n"
+            f"• <b>Limite:</b> {limite}\n"
+            f"• <b>Válido até:</b> {venc_txt}"
+        )
         teclado = None
     elif is_ativo and is_degustacao:
         texto = "🎁 <b>Plano Degustação Ativo!</b>\n• <b>Limite:</b> Até 2 regulações"
@@ -248,7 +273,6 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text(texto, parse_mode="HTML", reply_markup=teclado)
     else:
         await update.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
-
 
 async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ativa a degustação ou exibe opções de pagamento via Pix."""
@@ -282,14 +306,14 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "plano_trimestral":
         texto = "⭐ <b>Plano Trimestral</b>\n\n• Até 5 regulações.\n<b>Valor:</b> R$ 9,99 / trimestre"
         keyboard_botoes = [
-            [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_pro_trimestral")],
+            [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_trimestral")],
             [InlineKeyboardButton("⬅️ Voltar aos Planos", callback_data="planos")],
         ]
 
     elif data == "plano_semestral":
         texto = "🚀 <b>Plano Semestral</b>\n\n• Até 9 regulações.\n<b>Valor:</b> R$ 14,99 / semestre"
         keyboard_botoes = [
-            [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_pro_semestral")],
+            [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_semestral")],
             [InlineKeyboardButton("⬅️ Voltar aos Planos", callback_data="planos")],
         ]
 
@@ -346,7 +370,7 @@ async def comando_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Como podemos ajudar você hoje?\n\n"
         "<b>📌 Canais de Atendimento:</b>\n"
         "• 🤖 <b>Bot de Atendimento:</b> @central_vigiasaude_bot\n"
-        "• 📧 <b>Email:</b> suportealertasus@gmail.com\n\n"
+        "• 📧 <b>Email:</b> suportevigiasaude@gmail.com\n\n"
         "<b>❓ Perguntas Frequentes (FAQs):</b>\n"
         "1️⃣ Como cadastrar uma nova regulação?\n"
         "2️⃣ Como verificar o status das regulações?\n"
@@ -360,7 +384,7 @@ async def comando_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
     teclado = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🤖 Bot de Atendimento", url="https://t.me/meu_atendimento_123_bot"),
-            InlineKeyboardButton("📧 Email", url="mailto:suportealertasus@gmail.com")
+            InlineKeyboardButton("📧 Email", url="mailto:suportevigiasaude@gmail.com")
         ],
         [
             InlineKeyboardButton("1️⃣ Cadastrar", callback_data="faq_cadastrar"),
