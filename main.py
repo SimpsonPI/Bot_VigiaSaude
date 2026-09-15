@@ -1,18 +1,21 @@
 from dotenv import load_dotenv
 load_dotenv()
+
 import logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
-    force=True   # ← força mesmo se já foi configurado
-)   
+    force=True
+)
 
+# Silencia logs verbosos do httpx/httpcore (evita vazar token nos logs)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 import os
 import json
 import asyncio
-import logging
+
 from telegram import BotCommand, BotCommandScopeAllPrivateChats, Update
-from admin_ia_controller import executar_acao_admin
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -22,8 +25,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
-
-from config import TELEGRAM_BOT_TOKEN
+from admin_ia_controller import executar_acao_admin
 from handler import (
     comando_planos,
     comando_privacidade,
@@ -36,9 +38,15 @@ from handler import (
     iniciar_corrigir,
     iniciar_excluir,
     iniciar_verificar_especifico,
+    mostrar_email_suporte,
     start,
     configurar_menu_comandos,
+    callback_faq_suporte,
+    callback_privacidade_voltar,
+    callback_abrir_termo_privacidade,
+    mostrar_email_suporte,
 )
+
 from handler_gestao import (
     selecionar_regulacao_callback,
     selecionar_campo_callback,
@@ -74,12 +82,9 @@ from suporte import (
     iniciar_atendimento_20,
     cancelar_suporte,
     conv_suporte,
+    suporte_email,
 )
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
 logger = logging.getLogger(__name__)
 
 
@@ -251,9 +256,34 @@ def main():
     app.add_handler(CallbackQueryHandler(exibir_resposta_faq, pattern="^faq_"))
     app.add_handler(CallbackQueryHandler(iniciar_atendimento_20, pattern="^iniciar_atendimento_20$"))
     app.add_handler(CallbackQueryHandler(cancelar_suporte, pattern="^fechar_menu$"))
-    app.add_handler(CallbackQueryHandler(menu_suporte, pattern="^suporte$"))
-
+    app.add_handler(CallbackQueryHandler(
+    suporte_email,
+    pattern="^suporte_email$"
+))
+    app.add_handler(CallbackQueryHandler(
+    mostrar_email_suporte,
+    pattern="^mostrar_email_suporte$"
+))
     app.add_handler(conv_suporte)
+
+    # --- Novos handlers de privacidade e FAQ ---
+    app.add_handler(CallbackQueryHandler(
+        callback_abrir_termo_privacidade,
+        pattern="^abrir_termo_privacidade$"
+    ))
+    app.add_handler(CallbackQueryHandler(
+        callback_privacidade_voltar,
+        pattern="^privacidade_voltar$"
+    ))
+    app.add_handler(CallbackQueryHandler(
+        callback_faq_suporte,
+        pattern="^abrir_faq_suporte$"
+    ))
+
+    async def debug_todos_callbacks(update, context):
+        print(f"🔵 CALLBACK RECEBIDO: '{update.callback_query.data}'", flush=True)
+
+    app.add_handler(CallbackQueryHandler(debug_todos_callbacks), group=99)
 
     logger.info("Iniciando o bot VigiaSaude via polling...")
     app.run_polling(drop_pending_updates=True)
@@ -261,3 +291,12 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+
