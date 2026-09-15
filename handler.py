@@ -24,7 +24,7 @@ from telegram.warnings import PTBUserWarning
 # Silencia os avisos de rastreamento do ConversationHandler
 warnings.filterwarnings("ignore", category=PTBUserWarning)
 
-from config import TELEGRAM_BOT_TOKEN
+from config import TELEGRAM_BOT_TOKEN, BOT_SUPORTE_LINK
 from database import (
     ativar_ou_atualizar_assinatura,
     atualizar_campo_regulacao,
@@ -114,7 +114,7 @@ async def cancelar_operacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def callback_faq_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Exibe a FAQ completa do VigiaSaude 2.5 diretamente no chat."""
+    print("🔵🔵🔵 FAQ CALLBACK RECEBIDO!", flush=True)   # ← ADICIONE ESTA LINHA
     query = update.callback_query
     await query.answer()
     
@@ -148,15 +148,34 @@ async def callback_privacidade_voltar(update: Update, context: ContextTypes.DEFA
     """Retorna para a tela inicial de privacidade."""
     query = update.callback_query
     await query.answer()
-    
+
     texto = "Clique no botão abaixo para ler a nossa Política de Privacidade e Termos de Uso:"
     teclado = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔒 Abrir Política de Privacidade e Termos", callback_data="https://seu-site-ou-link-de-privacidade.com")],
-        [InlineKeyboardButton("💬 Dúvidas / Suporte (FAQ)", callback_data="abrir_faq_suporte")]
+        [InlineKeyboardButton("🔒 Abrir Política de Privacidade e Termos",
+                              callback_data="abrir_termo_privacidade")],
+        [InlineKeyboardButton("💬 Dúvidas / Suporte (FAQ)",
+                              callback_data="abrir_faq_suporte")]
     ])
-    
+
     await query.edit_message_text(texto, reply_markup=teclado)
 
+
+async def callback_abrir_termo_privacidade(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Envia o link da Política de Privacidade e Termos de Uso."""
+    query = update.callback_query
+    await query.answer()
+
+    texto = (
+        "🔒 <b>Política de Privacidade e Termos de Uso</b>\n\n"
+        "Acesse o documento completo no link abaixo:\n\n"
+        f'👉 <a href="{URL_TERMO_LGPD}">Abrir Política de Privacidade</a>'
+    )
+
+    await query.message.reply_text(
+        texto,
+        parse_mode="HTML",
+        disable_web_page_preview=False
+    )
 
 # --- HANDLER DO COMANDO /START E /INICIAR ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -214,6 +233,7 @@ def usuario_tem_acesso(plano_info: dict) -> bool:
     is_degustacao = tipo_plano == "degustacao"
     return is_cortesia or (is_degustacao and (usou_degustacao or status_bruto == "ativo")) or (status_bruto == "ativo")
 
+
 async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     chat_id_str = str(user_id)
@@ -231,35 +251,9 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_ativo = usuario_tem_acesso(plano_info)
 
     if is_ativo and not is_degustacao:
-        nomes_planos = {
-            "pro": "Pro",
-            "pro_trimestral": "Pro Trimestral",
-            "trimestral": "Pro Trimestral",
-            "pro_semestral": "Pro Semestral",
-            "semestral": "Pro Semestral",
-            "cortesia": "Cortesia VIP 👑",
-        }
-        tipo_formatado = nomes_planos.get(tipo_plano, "Pro")
+        tipo_formatado = "Cortesia VIP 👑" if is_cortesia else f"Pro"
         limite = plano_info.get("limite_ids") or "Ilimitado"
-
-        venc = plano_info.get("data_vencimento")
-        if venc:
-            try:
-                from datetime import datetime as _dt
-                data_v = _dt.fromisoformat(str(venc).replace("Z", "+00:00"))
-                venc_txt = data_v.strftime("%d/%m/%Y")
-            except Exception:
-                venc_txt = "—"
-        else:
-            venc_txt = "Sem vencimento" if is_cortesia else "—"
-
-        texto = (
-            "✨ <b>Sua Assinatura está Ativa!</b>\n\n"
-            f"• <b>Plano:</b> {tipo_formatado}\n"
-            "• <b>Status:</b> Ativo 🟢\n"
-            f"• <b>Limite:</b> {limite}\n"
-            f"• <b>Válido até:</b> {venc_txt}"
-        )
+        texto = f"✨ <b>Sua Assinatura está Ativa!</b>\n\n• <b>Plano:</b> {tipo_formatado}\n• <b>Status:</b> Ativo 🟢\n• <b>Limite:</b> {limite}"
         teclado = None
     elif is_ativo and is_degustacao:
         texto = "🎁 <b>Plano Degustação Ativo!</b>\n• <b>Limite:</b> Até 2 regulações"
@@ -273,6 +267,7 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text(texto, parse_mode="HTML", reply_markup=teclado)
     else:
         await update.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
+
 
 async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ativa a degustação ou exibe opções de pagamento via Pix."""
@@ -330,8 +325,10 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def comando_privacidade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     teclado = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔒 Abrir Política de Privacidade e Termos", callback_data="https://seu-site-ou-link-de-privacidade.com")],
-        [InlineKeyboardButton("💬 Dúvidas / Suporte (FAQ)", callback_data="abrir_faq_suporte")]
+        [InlineKeyboardButton("🔒 Abrir Política de Privacidade e Termos",
+                              callback_data="abrir_termo_privacidade")],
+        [InlineKeyboardButton("💬 Dúvidas / Suporte (FAQ)",
+                              callback_data="abrir_faq_suporte")]
     ])
     texto = "Clique no botão abaixo para ler a nossa Política de Privacidade e Termos de Uso:"
     if update.callback_query:
@@ -348,7 +345,7 @@ async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🤖 *Central de Ajuda e FAQ - VigiaSaude*\n\n"
         "Selecione uma das opções abaixo para tirar suas dúvidas ou obter suporte:"
     )
-    
+
     teclado = [
         [InlineKeyboardButton("❓ O que é o VigiaSaude?", callback_data="faq_o_que_e")],
         [InlineKeyboardButton("🔍 Como rastrear?", callback_data="faq_rastrear")],
@@ -357,7 +354,7 @@ async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("💬 Falar com Suporte", callback_data="abrir_faq_suporte")]
     ]
     reply_markup = InlineKeyboardMarkup(teclado)
-    
+
     if update.message:
         await update.message.reply_text(texto, reply_markup=reply_markup, parse_mode="Markdown")
     elif update.callback_query:
@@ -382,9 +379,9 @@ async def comando_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     teclado = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🤖 Bot de Atendimento", url="https://t.me/meu_atendimento_123_bot"),
-            InlineKeyboardButton("📧 Email", url="mailto:suportevigiasaude@gmail.com")
+    [
+            InlineKeyboardButton("🤖 Bot de Atendimento", url=BOT_SUPORTE_LINK),
+            InlineKeyboardButton("📧 Email", callback_data="mostrar_email_suporte")
         ],
         [
             InlineKeyboardButton("1️⃣ Cadastrar", callback_data="faq_cadastrar"),
@@ -714,6 +711,17 @@ async def faq_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Voltar", callback_data="suporte")]])
     await query.edit_message_text(texto, parse_mode="HTML", reply_markup=teclado)
 
+async def mostrar_email_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exibe o email de suporte como texto copiável."""
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.reply_text(
+        "📧 <b>Email de Suporte</b>\n\n"
+        "<code>suportevigiasaude@gmail.com</code>\n\n"
+        "Toque no email acima para copiar.",
+        parse_mode="HTML"
+    )
 
 async def faq_governo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Resposta para O VigiaSaude tem vínculo com o governo."""
@@ -800,4 +808,5 @@ __all__ = [
     "faq_alterar",
     "faq_planos",
     "faq_governo",
+    "mostrar_email_suporte"
 ]

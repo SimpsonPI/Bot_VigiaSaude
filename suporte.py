@@ -1,4 +1,5 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from config import BOT_SUPORTE_LINK 
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -19,7 +20,7 @@ async def menu_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Como podemos ajudar você hoje?\n\n"
         "<b>📌 Canais de Atendimento:</b>\n"
         "• 🤖 <b>Bot de Atendimento:</b> @central_vigiasaude_bot\n"
-        "• 📧 <b>Email:</b> suportealertasus@gmail.com\n\n"
+        "• 📧 <b>Email:</b> suportevigiasaude@gmail.com\n\n"
         "<b>❓ Perguntas Frequentes (FAQs):</b>\n"
         "1️⃣ Como cadastrar uma nova regulação?\n"
         "2️⃣ Como verificar o status das regulações?\n"
@@ -32,7 +33,7 @@ async def menu_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     teclado = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🤖 Bot de Atendimento", url="https://t.me/meu_atendimento_123_bot"),
+            InlineKeyboardButton("🤖 Bot de Atendimento", url=BOT_SUPORTE_LINK),
             InlineKeyboardButton("📧 Email", callback_data="suporte_email")
         ],
         [
@@ -117,7 +118,7 @@ async def suporte_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = (
         "📧 <b>Email de Suporte</b>\n\n"
         "Para entrar em contato com nossa equipe, utilize o email:\n\n"
-        "<b>suportealertasus@gmail.com</b>\n\n"
+        "<b>suportevigiasaude@gmail.com</b>\n\n"
         "Nossa equipe responderá o mais breve possível.\n\n"
         "<b>Horário de atendimento:</b>\n"
         "Segunda a Sexta: 08h às 18h\n"
