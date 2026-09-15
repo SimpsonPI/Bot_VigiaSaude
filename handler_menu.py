@@ -1,6 +1,7 @@
 import logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from telegram.ext import ContextTypes
+from config import BOT_SUPORTE_LINK
 
 logger = logging.getLogger(__name__)
 

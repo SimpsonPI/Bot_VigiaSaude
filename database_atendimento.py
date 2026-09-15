@@ -162,4 +162,134 @@ async def obter_configuracao(chave: str) -> str | None:
 async def obter_email_suporte() -> str:
     """Obtém o email de suporte configurado."""
     email = await obter_configuracao("email_suporte")
-    return email or "suportealertasus@gmail.com"
+    return email or "suportevigiasaude@gmail.com"
+
+async def buscar_estatisticas_admin_periodo() -> dict:
+    """Busca estatísticas com recorte temporal (hoje, 7 dias, totais) e por plano."""
+    from datetime import datetime, timedelta, timezone
+
+    agora = datetime.now(timezone.utc)
+    hoje_inicio = agora.replace(hour=0, minute=0, second=0, microsecond=0)
+    semana_inicio = agora - timedelta(days=7)
+
+    stats = {
+        "hoje_novos_cadastros": 0,
+        "hoje_chamados_abertos": 0,
+        "semana_novos_cadastros": 0,
+        "semana_chamados_abertos": 0,
+        "semana_regulacoes": 0,
+        "total_usuarios": 0,
+        "total_chamados_abertos": 0,
+        "total_regulacoes": 0,
+        "total_assinaturas_ativas": 0,
+        "planos_ativos": {},
+        "ultimos_chamados": [],
+    }
+
+    def parse_iso(s):
+        if not s:
+            return None
+        try:
+            return datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+        except Exception:
+            return None
+
+    def is_status_ativo(s):
+        return str(s).lower() in ("ativo", "active", "ativa")
+
+    # ---------- ASSINATURAS ----------
+    try:
+        res = supabase.table("assinaturas").select(
+            "chat_id, tipo_plano, status, created_at"
+        ).execute()
+        assinaturas = res.data if res.data else []
+
+        chat_ids_unicos = set()
+        planos_ativos = {}
+
+        for a in assinaturas:
+            chat_id = str(a.get("chat_id", ""))
+            if chat_id:
+                chat_ids_unicos.add(chat_id)
+
+            if is_status_ativo(a.get("status")):
+                tipo = str(a.get("tipo_plano", "desconhecido")).lower()
+                planos_ativos[tipo] = planos_ativos.get(tipo, 0) + 1
+
+                criado = parse_iso(a.get("created_at"))
+                if criado:
+                    if criado >= hoje_inicio:
+                        stats["hoje_novos_cadastros"] += 1
+                    if criado >= semana_inicio:
+                        stats["semana_novos_cadastros"] += 1
+
+        stats["total_usuarios"] = len(chat_ids_unicos)
+        stats["planos_ativos"] = planos_ativos
+        stats["total_assinaturas_ativas"] = sum(planos_ativos.values())
+        logger.info(f"📊 Planos ativos: {planos_ativos}")
+    except Exception as e:
+        logger.error(f"❌ Erro nas assinaturas: {repr(e)}")
+
+    # ---------- CHAMADOS ----------
+    try:
+        res = supabase.table("chamados_suporte").select(
+            "id, nome_usuario, status, created_at"
+        ).execute()
+        chamados = res.data if res.data else []
+
+        for c in chamados:
+            if str(c.get("status", "")).lower() in ("aberto", "em_andamento"):
+                stats["total_chamados_abertos"] += 1
+                criado = parse_iso(c.get("created_at"))
+                if criado:
+                    if criado >= hoje_inicio:
+                        stats["hoje_chamados_abertos"] += 1
+                    if criado >= semana_inicio:
+                        stats["semana_chamados_abertos"] += 1
+
+        try:
+            stats["ultimos_chamados"] = sorted(
+                chamados,
+                key=lambda x: str(x.get("created_at", "")),
+                reverse=True,
+            )[:5]
+        except Exception:
+            stats["ultimos_chamados"] = chamados[:5]
+    except Exception as e:
+        logger.error(f"❌ Erro nos chamados: {repr(e)}")
+
+    # ---------- REGULAÇÕES ----------
+    try:
+        res = supabase.table("AlertaSUS_2.0").select("numero_reg, created_at").execute()
+        regs = res.data if res.data else []
+        stats["total_regulacoes"] = len(regs)
+        for r in regs:
+            criado = parse_iso(r.get("created_at"))
+            if criado and criado >= semana_inicio:
+                stats["semana_regulacoes"] += 1
+    except Exception as e:
+        logger.error(f"❌ Erro nas regulações: {repr(e)}")
+
+    logger.info(f"📊 ESTATÍSTICAS FINAIS: {stats}")
+    return stats
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

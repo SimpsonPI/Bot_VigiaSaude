@@ -162,12 +162,12 @@ async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
 async def limpar_pagamentos_pendentes():
     """Remove pagamentos pendentes com mais de 24 horas."""
     try:
-    from datetime import datetime, timedelta, timezone
-    from database import supabase
-        
-    limite = datetime.now(timezone.utc) - timedelta(hours=24)
-        
-    supabase.table("pagamentos_pix").delete().eq("status", "pending").lt("created_at", limite.isoformat()).execute()
-    print("✅ Pagamentos pendentes com mais de 24h foram limpos.")
+        from datetime import datetime, timedelta, timezone
+        from database import supabase
+
+        limite = datetime.now(timezone.utc) - timedelta(hours=24)
+
+        supabase.table("pagamentos_pix").delete().eq("status", "pending").lt("created_at", limite.isoformat()).execute()
+        print("✅ Pagamentos pendentes com mais de 24h foram limpos.")
     except Exception as e:
-    print(f"❌ Erro ao limpar pagamentos: {e}")
+        print(f"❌ Erro ao limpar pagamentos: {e}")

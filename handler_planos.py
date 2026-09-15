@@ -37,21 +37,21 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
             )
         ])
 
-    keyboard.append([
+        keyboard.append([
         InlineKeyboardButton(
-            "⭐ Plano Semestral (R$ 9,99)", callback_data="plano_semestral"
+            "⭐ Plano Trimestral (R$ 9,99)", callback_data="plano_trimestral"
         )
     ])
     keyboard.append([
         InlineKeyboardButton(
-            "🚀 Plano Anual (R$ 14,99)", callback_data="plano_anual"
+            "🚀 Plano Semestral (R$ 14,99)", callback_data="plano_semestral"
         )
     ])
     keyboard.append([
-        InlineKeyboardButton(
-            "💬 Falar com Comercial", url="https://wa.me/5586994083113"
-        )
-    ])
+        #InlineKeyboardButton(
+            #"💬 Falar com Comercial", url="https://wa.me/5586994083113"
+        #)
+    #])
 
     return InlineKeyboardMarkup(keyboard)
 
@@ -95,15 +95,39 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_degustacao = tipo_plano == "degustacao"
     is_ativo = usuario_tem_acesso(plano_info)
 
-    if is_ativo and not is_degustacao:
-        tipo_formatado = "Cortesia VIP 👑" if is_cortesia else f"Pro ({tipo_plano.capitalize()})"
-        limite = plano_info.get("limite_ids", "Ilimitado")
+        if is_ativo and not is_degustacao:
+        # Nome amigável por tipo de plano
+        nomes_planos = {
+            "pro": "Pro",
+            "pro_trimestral": "Pro Trimestral",
+            "trimestral": "Pro Trimestral",
+            "pro_semestral": "Pro Semestral",
+            "semestral": "Pro Semestral",
+            "cortesia": "Cortesia VIP 👑",
+        }
+        tipo_formatado = nomes_planos.get(tipo_plano, "Pro")
+
+        # Limite com fallback real (usa "Ilimitado" se None ou vazio)
+        limite = plano_info.get("limite_ids") or "Ilimitado"
+
+        # Vencimento
+        venc = plano_info.get("data_vencimento")
+        if venc:
+            try:
+                from datetime import datetime
+                data_v = datetime.fromisoformat(venc.replace("Z", "+00:00"))
+                venc_txt = data_v.strftime("%d/%m/%Y")
+            except Exception:
+                venc_txt = "—"
+        else:
+            venc_txt = "Sem vencimento" if is_cortesia else "—"
 
         texto = (
             "✨ <b>Sua Assinatura está Ativa!</b>\n\n"
             f"• <b>Plano Atual:</b> {tipo_formatado}\n"
             "• <b>Status:</b> Ativo 🟢\n"
-            f"• <b>Limite de Monitoramentos:</b> {limite}\n\n"
+            f"• <b>Limite de Monitoramentos:</b> {limite}\n"
+            f"• <b>Válido até:</b> {venc_txt}\n\n"
             "Você já conta com acesso completo para acompanhar suas consultas e exames!"
         )
         teclado = None
@@ -172,27 +196,27 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⚡ Ver Planos Pro", callback_data="planos")]
         ]
 
-    elif data == "plano_semestral":
+        elif data == "plano_trimestral":
         texto = (
-            "⭐ <b>Plano Semestral</b>\n\n"
+            "⭐ <b>Plano Trimestral (3 meses)</b>\n\n"
             "• <b>Monitoramento Contínuo:</b> Notificações automáticas via Telegram.\n"
             "• <b>Capacidade:</b> Até 5 regulações cadastradas.\n\n"
-            "<b>Valor:</b> R$ 9,99 / semestre"
+            "<b>Valor:</b> R$ 9,99 / trimestre"
         )
         keyboard_botoes = [
-            [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_pro_semestral")],
+            [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_trimestral")],
             [InlineKeyboardButton("⬅️ Voltar aos Planos", callback_data="planos")],
         ]
 
-    elif data == "plano_anual":
+    elif data == "plano_semestral":
         texto = (
-            "🚀 <b>Plano Anual</b>\n\n"
-            "• <b>Monitoramento Contínuo:</b> Notificações automáticas por 12 meses.\n"
+            "🚀 <b>Plano Semestral (6 meses)</b>\n\n"
+            "• <b>Monitoramento Contínuo:</b> Notificações automáticas por 6 meses.\n"
             "• <b>Capacidade Ampliada:</b> Até 9 regulações cadastradas.\n\n"
-            "<b>Valor:</b> R$ 14,99 / ano"
+            "<b>Valor:</b> R$ 14,99 / semestre"
         )
         keyboard_botoes = [
-            [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_pro_anual")],
+            [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_semestral")],
             [InlineKeyboardButton("⬅️ Voltar aos Planos", callback_data="planos")],
         ]
     else:
@@ -209,6 +233,7 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     async def verificar_vencimentos(app):
     """Verifica assinaturas que vencem em 1 dia e envia alerta."""
+
     from datetime import datetime, timedelta, timezone
     import asyncio
     
@@ -217,7 +242,7 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         # Busca assinaturas ativas que ainda não expiraram
-        res = supabase.table("assinaturas").select("*").eq("status", "active").execute()
+        res = supabase.table("assinaturas").select("*").eq("status", "ativo").execute()
         for assinatura in res.data:
             venc = assinatura.get("data_vencimento")
             if not venc:

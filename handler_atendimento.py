@@ -35,7 +35,7 @@ async def menu_atendimento(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<b>Opções disponíveis:</b>\n"
         "• ❓ <b>FAQ Automático:</b> Respostas instantâneas para dúvidas frequentes\n"
         "• 👤 <b>Atendimento Humanizado:</b> Fale diretamente com nossa equipe\n"
-        "• 📧 <b>Email de Suporte:</b> suportealertasus@gmail.com\n\n"
+        "• 📧 <b>Email de Suporte:</b> suportevigiasaude@gmail.com\n\n"
         "Selecione uma opção abaixo:"
     )
     
@@ -45,7 +45,7 @@ async def menu_atendimento(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("👤 Atendimento Humanizado", callback_data="atendimento_humanizado")
         ],
         [
-            InlineKeyboardButton("📧 Email de Suporte", url="mailto:suportealertasus@gmail.com")
+            InlineKeyboardButton("📧 Email de Suporte", url="mailto:suportevigiasaude@gmail.com")
         ],
         [InlineKeyboardButton("⬅️ Voltar ao Menu Principal", callback_data="iniciar")]
     ])
@@ -253,7 +253,7 @@ async def processar_mensagem_humanizado(update: Update, context: ContextTypes.DE
                 f"Seu protocolo de atendimento é: <code>#{chamado_id}</code>\n\n"
                 "Nossa equipe analisará seu chamado e responderá em breve.\n"
                 "Você receberá uma notificação assim que houver resposta.\n\n"
-                "📧 Para contato direto, utilize nosso email: suportealertasus@gmail.com",
+                "📧 Para contato direto, utilize nosso email: suportevigiasaude@gmail.com",
                 parse_mode="HTML"
             )
         
@@ -271,7 +271,7 @@ async def processar_mensagem_humanizado(update: Update, context: ContextTypes.DE
         if update.message:
             await update.message.reply_text(
                 "❌ Ocorreu um erro ao registrar seu chamado.\n"
-                "Por favor, tente novamente ou contate: suportealertasus@gmail.com"
+                "Por favor, tente novamente ou contate: suportevigiasaude@gmail.com"
             )
     
     return ConversationHandler.END

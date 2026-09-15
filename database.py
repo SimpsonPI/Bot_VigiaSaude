@@ -29,9 +29,7 @@ def calcular_dias_plano(tipo_plano: str) -> int:
         return 90
     elif "semestral" in plano_lower:
         return 180
-    elif "anual" in plano_lower:
-        return 365
-    return 7
+    
 
 
 # --- REGRAS E GESTÃO DE PLANOS E ASSINATURAS ---
