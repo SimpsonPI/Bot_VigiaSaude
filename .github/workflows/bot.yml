@@ -2,8 +2,7 @@ name: VigiaSaude Bot
 
 on:
   workflow_dispatch:
-- schedule:
-    # Roda a cada 5 horas para garantir que o bot se mantenha ativo e reinicie se necessário
+  schedule:
     - cron: '0 */5 * * *'
 
 jobs:
@@ -29,7 +28,5 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          # Adicione aqui embaixo outras variáveis do seu .env caso seu bot utilize:
-          # OUTRA_VARIAVEL: ${{ secrets.OUTRA_VARIAVEL }}
         run: |
           python main.py
