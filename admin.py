@@ -412,5 +412,8 @@ async def comando_menu_admin(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "• /bloquear &lt;ID&gt; - Bloqueia o acesso de um usuário\n"
         "• /aviso &lt;mensagem&gt; - Dispara broadcast para toda a base\n\n"
         "💡 <i>Dica: Pode digitar o comando diretamente na barra de mensagens.</i>"
+        "• /aviso &lt;mensagem&gt; - Dispara broadcast para toda a base\n"
+        "• /enviar_midia - Enviar imagem/documento (individual ou broadcast)\n\n"
+        "• /enviar_enquete - Criar e enviar enquete (individual ou broadcast)\n\n"
     )
     await update.message.reply_text(texto, parse_mode="HTML")

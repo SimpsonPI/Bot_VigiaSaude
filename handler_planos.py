@@ -95,7 +95,7 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_degustacao = tipo_plano == "degustacao"
     is_ativo = usuario_tem_acesso(plano_info)
 
-        if is_ativo and not is_degustacao:
+    if is_ativo and not is_degustacao:
         # Nome amigável por tipo de plano
         nomes_planos = {
             "pro": "Pro",

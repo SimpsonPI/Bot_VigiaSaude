@@ -16,6 +16,8 @@ import json
 import asyncio
 
 from telegram import BotCommand, BotCommandScopeAllPrivateChats, Update
+from handler_midia_admin import conv_envio_midia
+from handler_enquete_admin import conv_envio_enquete
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -45,6 +47,18 @@ from handler import (
     callback_privacidade_voltar,
     callback_abrir_termo_privacidade,
     mostrar_email_suporte,
+)
+
+from handler_enquete_local import (
+    conv_criar_enquete,
+    receber_voto,
+    voto_ja_registrado,
+    comando_resultado,
+    callback_resultado,
+    comando_resultado_detalhado,
+    comando_listar_enquetes,
+    comando_encerrar,
+    comando_apagar_enquete,
 )
 
 from handler_gestao import (
@@ -192,7 +206,10 @@ async def post_init(app):
 
 
 def main():
-    token = os.getenv("TELEGRAM_BOT_TOKEN") or TELEGRAM_BOT_TOKEN
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        raise ValueError("O TELEGRAM_BOT_TOKEN precisa estar configurado nas variáveis de ambiente.")
+        
     app = (
         ApplicationBuilder()
         .token(token)
@@ -218,6 +235,8 @@ def main():
     app.add_handler(conv_consulta_especifica)
     app.add_handler(conv_corrigir)
     app.add_handler(conv_excluir)
+    app.add_handler(conv_envio_midia)
+    app.add_handler(conv_envio_enquete)
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("iniciar", start))
