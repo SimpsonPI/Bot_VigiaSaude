@@ -1,4 +1,5 @@
 import logging
+from streamlit import context
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 from database import supabase
@@ -56,9 +57,11 @@ async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         elif update.callback_query:
             await update.callback_query.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(teclado), parse_mode="HTML")
 
+        context.user_data["_em_fluxo_admin"] = "corrigir"
         return SELECIONAR_REGULACAO
     except Exception as e:
         logger.error(f"Erro em iniciar_corrigir: {e}")
+        context.user_data.pop("_em_fluxo_admin", None)
         return ConversationHandler.END
 
 async def mostrar_resumo_regulacao(update_or_query, context, num_reg):
@@ -194,10 +197,11 @@ async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(teclado), parse_mode="HTML")
         elif update.callback_query:
             await update.callback_query.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(teclado), parse_mode="HTML")
-
+        context.user_data["_em_fluxo_admin"] = "excluir"
         return SELECIONAR_REGULACAO_EXCLUIR
     except Exception as e:
         logger.error(f"Erro em iniciar_excluir: {e}")
+        context.user_data.pop("_em_fluxo_admin", None)
         return ConversationHandler.END
 
 async def selecionar_regulacao_excluir_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

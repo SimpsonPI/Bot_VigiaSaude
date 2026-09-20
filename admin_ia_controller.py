@@ -7,6 +7,15 @@ from telegram.ext import ContextTypes
 from database import supabase
 from datetime import datetime, timedelta
 
+# Importa o storage das enquetes locais
+try:
+    from enquetes_storage import listar_enquetes, calcular_resultado
+    ENQUETES_OK = True
+except ImportError:
+    ENQUETES_OK = False
+    logger = logging.getLogger(__name__)
+    logger.warning("⚠️ enquetes_storage não encontrado. Contexto de enquetes desativado.")
+
 ADMIN_ID = int(os.getenv("ADMIN_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 NOME_ADMIN = os.getenv("NOME_ADMIN", "Sr. Lincoln")
@@ -26,13 +35,98 @@ PALAVRAS_CHAVE = [
     "resumo", "estatísticas", "quantos", "dados da tabela", "ler arquivo",
     "verificar regulação", "minha regulação", "total", "listar", "relatório",
     "vencimento", "pagamentos", "usuários ativos", "inativos", "status",
-    "consulta", "plano", "assinatura", "bloqueado", "pendente", "pix", "custa"
+    "consulta", "plano", "assinatura", "bloqueado", "pendente", "pix", "custa",
+    "enquete", "enquetes", "votação", "votos", "votar"  # ← NOVAS
 ]
 
 PALAVRAS_NOVIDADES = [
     "novidades", "mudanças recentes", "o que mudou", "últimas", "recentes",
     "novos cadastros", "novas regulações", "atualizações hoje"
 ]
+
+
+# ═══════════════════════════════════════════════════════════
+# CONTEXTO DINÂMICO DO SISTEMA
+# ═══════════════════════════════════════════════════════════
+
+async def coletar_contexto_sistema() -> str:
+    """
+    Coleta um snapshot do estado atual do sistema para a IA.
+    Inclui: enquetes, usuários, assinaturas, regulações, pagamentos, data/hora.
+    """
+    linhas = []
+    agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    linhas.append(f"DATA/HORA ATUAL: {agora}")
+
+    # ─── Enquetes ───
+    if ENQUETES_OK:
+        try:
+            enquetes = listar_enquetes()
+            ativas = [e for e in enquetes if e.get("ativa")]
+            encerradas = [e for e in enquetes if not e.get("ativa")]
+
+            linhas.append(f"\nENQUETES:")
+            linhas.append(f"• Total: {len(enquetes)}")
+            linhas.append(f"• Ativas: {len(ativas)}")
+            linhas.append(f"• Encerradas: {len(encerradas)}")
+
+            if ativas:
+                linhas.append("• Detalhes das ativas:")
+                for e in ativas[:5]:
+                    r = calcular_resultado(e)
+                    linhas.append(
+                        f"  - #{e['id']}: \"{e.get('pergunta', '')[:60]}\" "
+                        f"({r['total']} voto(s))"
+                    )
+            else:
+                linhas.append("• Nenhuma enquete ativa no momento.")
+
+            if encerradas:
+                ult = encerradas[0]
+                linhas.append(f"• Última encerrada: #{ult['id']} — \"{ult.get('pergunta', '')[:60]}\"")
+        except Exception as e:
+            logger.error(f"Erro ao coletar enquetes: {e}")
+            linhas.append("ENQUETES: erro ao carregar.")
+
+    # ─── Usuários/assinaturas ───
+    try:
+        res = supabase.table("assinaturas").select("*", count="exact").execute()
+        total_users = res.count if hasattr(res, "count") and res.count is not None else len(res.data or [])
+
+        res_ativos = supabase.table("assinaturas").select("*", count="exact").eq("status", "ativo").execute()
+        total_ativos = res_ativos.count if hasattr(res_ativos, "count") and res_ativos.count is not None else len(res_ativos.data or [])
+
+        linhas.append(f"\nUSUÁRIOS:")
+        linhas.append(f"• Total de assinaturas: {total_users}")
+        linhas.append(f"• Assinaturas ativas: {total_ativos}")
+    except Exception as e:
+        logger.error(f"Erro ao coletar usuários: {e}")
+
+    # ─── Regulações ───
+    try:
+        res = supabase.table("AlertaSUS_2.0").select("*", count="exact").execute()
+        total_reg = res.count if hasattr(res, "count") and res.count is not None else len(res.data or [])
+        linhas.append(f"\nREGULAÇÕES:")
+        linhas.append(f"• Total cadastradas: {total_reg}")
+    except Exception as e:
+        logger.error(f"Erro ao coletar regulações: {e}")
+
+    # ─── Pagamentos pendentes ───
+    try:
+        res = supabase.table("pagamentos_pix").select("*", count="exact").eq("status", "pending").execute()
+        total_pend = res.count if hasattr(res, "count") and res.count is not None else len(res.data or [])
+        linhas.append(f"\nPAGAMENTOS:")
+        linhas.append(f"• Pix pendentes: {total_pend}")
+    except Exception as e:
+        logger.error(f"Erro ao coletar pagamentos: {e}")
+
+    return "\n".join(linhas)
+
+
+# ═══════════════════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════════════════
 
 async def obter_conhecimento() -> str:
     """Busca o conteúdo dos arquivos de conhecimento no GitHub."""
@@ -46,6 +140,7 @@ async def obter_conhecimento() -> str:
     except Exception as e:
         logger.error(f"Erro ao ler arquivo de conhecimento: {e}")
     return conhecimento
+
 
 async def chamar_groq(system_prompt: str, user_message: str) -> str:
     """Chama a API do Groq e retorna a resposta em texto."""
@@ -71,6 +166,11 @@ async def chamar_groq(system_prompt: str, user_message: str) -> str:
         logger.error(f"Erro ao chamar Groq: {e}")
         return f"❌ Erro na chamada à IA: {str(e)}"
 
+
+# ═══════════════════════════════════════════════════════════
+# HANDLER PRINCIPAL
+# ═══════════════════════════════════════════════════════════
+
 async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler para mensagens do administrador (linguagem natural)."""
     if update.effective_user.id != ADMIN_ID:
@@ -78,10 +178,15 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not update.message or not update.message.text:
         return
 
+    # 🚩 Se o admin está dentro de um fluxo (mídia, enquete, etc.), NÃO processa aqui
+    if context.user_data.get("_em_fluxo_admin"):
+        return
+
     user_message = update.message.text
     user_text_lower = user_message.lower()
+    # ... resto do código ...
 
-    # 1. Se for saudação, conversa normal (sem consultar dados)
+    # 1. Saudação simples
     if any(saudacao in user_text_lower for saudacao in SAUDACOES):
         prompt_conversa = (
             f"Você é o VS, assistente do {NOME_ADMIN}. "
@@ -95,7 +200,7 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
             await update.message.reply_text(resposta, parse_mode=None)
         return
 
-    # 2. Se for pergunta sobre "novidades", consulta banco de dados
+    # 2. Novidades (últimas 24h)
     if any(palavra in user_text_lower for palavra in PALAVRAS_NOVIDADES):
         try:
             agora = datetime.utcnow()
@@ -123,12 +228,16 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
             await update.message.reply_text(resposta_final, parse_mode=None)
         return
 
-    # 3. Se for pedido administrativo, consulta tudo
+    # 3. Conversa genérica (sem palavras-chave) — MAS agora com contexto do sistema
     if not any(palavra in user_text_lower for palavra in PALAVRAS_CHAVE):
+        contexto_sistema = await coletar_contexto_sistema()
         prompt_conversa = (
             f"Você é o VS, assistente do {NOME_ADMIN}. "
-            f"O usuário é {NOME_ADMIN}. "
-            "Responda de forma amigável e curta. NUNCA invente informações."
+            f"O usuário é {NOME_ADMIN} (administrador do sistema).\n\n"
+            f"CONTEXTO ATUAL DO SISTEMA:\n{contexto_sistema}\n\n"
+            "Use essas informações para responder perguntas sobre o sistema. "
+            "Se o admin perguntar sobre enquetes, usuários, regulações, etc., use os dados acima. "
+            "Responda de forma amigável e curta. NUNCA invente informações que não estão no contexto."
         )
         resposta = await chamar_groq(prompt_conversa, user_message)
         try:
@@ -137,15 +246,13 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
             await update.message.reply_text(resposta, parse_mode=None)
         return
 
-    # 4. Carrega conhecimento (com FALLBACK)
-    conhecimento = ""
+    # 4. Pedido administrativo → carrega conhecimento + contexto
     try:
         conhecimento = await obter_conhecimento()
     except Exception as e:
         logger.error(f"Erro ao obter conhecimento: {e}")
         conhecimento = ""
 
-    # 🔄 FALLBACK: Se o conhecimento do GitHub falhar, usa esta descrição básica
     if not conhecimento:
         conhecimento = (
             "O VigiaSaúde é um serviço independente que monitora regulações de saúde (consultas e exames) "
@@ -153,6 +260,8 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
             "Planos: Degustação (7 dias grátis), Trimestral (R$ 9,99) e Semestral (R$ 14,99). "
             "Cadastro: Número do SUS, Nome, Celular, Data de nascimento, ID da Regulação, CBO e Procedimento."
         )
+
+    contexto_sistema = await coletar_contexto_sistema()
 
     prompt_deteccao = (
         f"Você é o VS, assistente do {NOME_ADMIN}. Identifique a ação que o administrador deseja executar. "
@@ -217,9 +326,10 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         prompt_formatacao = (
             f"Você é o VS, assistente do {NOME_ADMIN}. "
-            f"O administrador pediu: '{user_message}'. "
-            f"Dados do banco: {dados_brutos}. "
-            f"Conhecimento do sistema: {conhecimento}. "
+            f"O administrador pediu: '{user_message}'.\n\n"
+            f"DADOS DO BANCO:\n{dados_brutos}\n\n"
+            f"CONTEXTO ATUAL DO SISTEMA:\n{contexto_sistema}\n\n"
+            f"CONHECIMENTO DO SISTEMA:\n{conhecimento}\n\n"
             "Responda de forma EXTREMAMENTE OBJETIVA. Apenas traga os dados solicitados. "
             "Não explique o que é o sistema. Não adicione textos extras. "
             "Se for uma lista, formate como lista curta. Se forem números, apenas mostre os números."
@@ -229,9 +339,10 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
     except json.JSONDecodeError:
         prompt_formatacao = (
             f"Você é o VS, assistente do {NOME_ADMIN}. "
-            f"O administrador pediu: '{user_message}'. "
-            f"Conhecimento do sistema: {conhecimento}. "
-            "Responda de forma amigável e curta. NUNCA invente informações."
+            f"O administrador pediu: '{user_message}'.\n\n"
+            f"CONTEXTO ATUAL DO SISTEMA:\n{contexto_sistema}\n\n"
+            f"CONHECIMENTO DO SISTEMA:\n{conhecimento}\n\n"
+            "Responda de forma amigável e curta usando o contexto acima. NUNCA invente informações."
         )
         resposta_final = await chamar_groq(prompt_formatacao, "Responda a pergunta.")
 

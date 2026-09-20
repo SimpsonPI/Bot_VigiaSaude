@@ -1,5 +1,6 @@
 # handler_midia_admin.py
 import logging
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes,
@@ -26,6 +27,9 @@ async def iniciar_envio_midia(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("⛔ Acesso restrito a administradores.")
         return ConversationHandler.END
 
+    # 🚩 Marca que o admin está em um fluxo (evita que a IA processe por engano)
+    context.user_data["_em_fluxo_admin"] = "midia"
+
     for k in ("midia_file_id", "midia_tipo", "midia_caption", "destino_chat_ids"):
         context.user_data.pop(k, None)
 
@@ -40,7 +44,7 @@ async def iniciar_envio_midia(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def receber_midia_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Recebe a mídia do admin e pede o destino."""
+    """Recebe a mídia do admin, sanitiza a legenda e pede o destino."""
     msg = update.message
 
     if msg.photo:
@@ -56,12 +60,30 @@ async def receber_midia_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
         await msg.reply_text("❌ Formato não suportado. Envie uma imagem, documento ou vídeo.")
         return AGUARDANDO_MIDIA
 
+    # ─── SANITIZAÇÃO DA LEGENDA ───
+    caption_original = msg.caption or ""
+
+    # Remove comandos no início (ex: /enviar_midia, /start, etc.)
+    caption_limpa = re.sub(r"^/\S+\s*", "", caption_original).strip()
+
+    # Remove qualquer menção a comandos ao longo do texto
+    caption_limpa = re.sub(r"/[a-zA-Z_]+", "", caption_limpa).strip()
+
+    # Se sobrou só espaço ou ficou vazio, deixa sem legenda
+    if not caption_limpa or caption_limpa in ("", "-"):
+        caption_limpa = ""
+
     context.user_data["midia_file_id"] = file_id
     context.user_data["midia_tipo"] = tipo
-    context.user_data["midia_caption"] = msg.caption or ""
+    context.user_data["midia_caption"] = caption_limpa
+
+    aviso = ""
+    if caption_original and not caption_limpa:
+        aviso = "\n⚠️ <i>Comando detectado na legenda e removido automaticamente.</i>"
 
     await msg.reply_text(
-        f"✅ Mídia recebida ({tipo}).\n\n"
+        f"✅ Mídia recebida ({tipo}).\n"
+        f"📝 Legenda: <i>{caption_limpa or '(sem legenda)'}</i>{aviso}\n\n"
         "📨 Para quem deseja enviar?\n\n"
         "• Digite o <b>ID do chat</b> (ex: <code>123456789</code>)\n"
         "• Ou digite <b>todos</b> para enviar a todos os usuários cadastrados.",
@@ -135,6 +157,7 @@ async def confirmar_envio_midia(update: Update, context: ContextTypes.DEFAULT_TY
     destinos = context.user_data.get("destino_chat_ids") or []
 
     if not file_id or not destinos:
+        context.user_data.pop("_em_fluxo_admin", None)
         await query.edit_message_text("❌ Dados incompletos. Recomece com /enviar_midia.")
         return ConversationHandler.END
 
@@ -169,6 +192,7 @@ async def confirmar_envio_midia(update: Update, context: ContextTypes.DEFAULT_TY
     for k in ("midia_file_id", "midia_tipo", "midia_caption", "destino_chat_ids"):
         context.user_data.pop(k, None)
 
+    context.user_data.pop("_em_fluxo_admin", None)
     return ConversationHandler.END
 
 
@@ -183,6 +207,7 @@ async def cancelar_envio_midia(update: Update, context: ContextTypes.DEFAULT_TYP
     for k in ("midia_file_id", "midia_tipo", "midia_caption", "destino_chat_ids"):
         context.user_data.pop(k, None)
 
+    context.user_data.pop("_em_fluxo_admin", None)
     return ConversationHandler.END
 
 

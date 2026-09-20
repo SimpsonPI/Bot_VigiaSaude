@@ -221,10 +221,11 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
                 reply_markup=reply_markup,
                 parse_mode="HTML"
             )
-
+        context.user_data["_em_fluxo_admin"] = "verificar"
         return CONSULTAR_ID
     except Exception as e:
         logger.error(f"Erro em iniciar_verificar_especifico: {e}")
+        context.user_data.pop("_em_fluxo_admin", None)
         return ConversationHandler.END
 
 

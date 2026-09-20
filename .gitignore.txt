@@ -1,5 +1,6 @@
+enquetes_data.json
+main_backup.py
 .env
+.venv/
 __pycache__/
-venv/
-.idea/
-.continue/
+*.pyc

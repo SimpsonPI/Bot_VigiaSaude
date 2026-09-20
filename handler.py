@@ -110,6 +110,7 @@ async def cancelar_operacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
 
     context.user_data.clear()
+    context.user_data.pop("_em_fluxo_admin", None)   # ← ADICIONE
     return ConversationHandler.END
 
 

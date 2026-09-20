@@ -159,3 +159,89 @@ def calcular_resultado(enquete: dict) -> dict:
         "contagem": contagem,
         "opcoes": opcoes,
     }
+
+def salvar_mensagem(enquete_id: int, chat_id: str, message_id: int):
+    """Registra o message_id de cada destinatário para permitir edição posterior."""
+    with _lock:
+        dados = _carregar()
+        enq = dados["enquetes"].get(str(enquete_id))
+        if not enq:
+            return
+        enq.setdefault("mensagens", {})[str(chat_id)] = message_id
+        _salvar(dados)
+
+
+def obter_mensagens(enquete_id: int) -> dict:
+    """Retorna o dicionário {chat_id: message_id} de uma enquete."""
+    dados = _carregar()
+    enq = dados["enquetes"].get(str(enquete_id))
+    if not enq:
+        return {}
+    return enq.get("mensagens", {})
+
+from datetime import datetime, timezone, timedelta
+
+
+def definir_prazo(enquete_id: int, segundos: int | None):
+    """Define o prazo de encerramento da enquete."""
+    with _lock:
+        dados = _carregar()
+        enq = dados["enquetes"].get(str(enquete_id))
+        if not enq:
+            return False
+        if segundos is None:
+            enq["fecha_em"] = None
+        else:
+            fecha = datetime.now(timezone.utc) + timedelta(seconds=segundos)
+            enq["fecha_em"] = fecha.isoformat()
+        _salvar(dados)
+        return True
+
+
+def obter_enquetes_expiradas() -> list:
+    """Retorna enquetes ativas cujo prazo já passou."""
+    agora = datetime.now(timezone.utc)
+    expiradas = []
+    dados = _carregar()
+    for enq in dados["enquetes"].values():
+        if not enq.get("ativa"):
+            continue
+        fecha_str = enq.get("fecha_em")
+        if not fecha_str:
+            continue
+        try:
+            fecha = datetime.fromisoformat(fecha_str.replace("Z", "+00:00"))
+            if agora >= fecha:
+                expiradas.append(enq)
+        except Exception:
+            continue
+    return expiradas
+
+
+def tempo_restante(enquete: dict) -> str:
+    """Retorna string legível do tempo restante (ex: '5 min', '2h 15min')."""
+    fecha_str = enquete.get("fecha_em")
+    if not fecha_str:
+        return "sem prazo"
+    try:
+        fecha = datetime.fromisoformat(fecha_str.replace("Z", "+00:00"))
+        restante = (fecha - datetime.now(timezone.utc)).total_seconds()
+        if restante <= 0:
+            return "expirada"
+        horas = int(restante // 3600)
+        minutos = int((restante % 3600) // 60)
+        if horas > 0:
+            return f"{horas}h {minutos}min"
+        return f"{minutos}min"
+    except Exception:
+        return "?"
+
+
+def limpar_mensagens(enquete_id: int):
+    """Remove o registro de mensagens (usado após apagar do chat)."""
+    with _lock:
+        dados = _carregar()
+        enq = dados["enquetes"].get(str(enquete_id))
+        if enq:
+            enq["mensagens"] = {}
+            _salvar(dados)

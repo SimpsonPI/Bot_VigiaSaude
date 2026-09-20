@@ -8,16 +8,14 @@ logging.basicConfig(
     force=True
 )
 
-# Silencia logs verbosos do httpx/httpcore (evita vazar token nos logs)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 import os
 import json
 import asyncio
 
 from telegram import BotCommand, BotCommandScopeAllPrivateChats, Update
-from handler_midia_admin import conv_envio_midia
-from handler_enquete_admin import conv_envio_enquete
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -27,7 +25,11 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
+from telegram.error import TimedOut, NetworkError
+
 from admin_ia_controller import executar_acao_admin
+
 from handler import (
     comando_planos,
     comando_privacidade,
@@ -46,19 +48,6 @@ from handler import (
     callback_faq_suporte,
     callback_privacidade_voltar,
     callback_abrir_termo_privacidade,
-    mostrar_email_suporte,
-)
-
-from handler_enquete_local import (
-    conv_criar_enquete,
-    receber_voto,
-    voto_ja_registrado,
-    comando_resultado,
-    callback_resultado,
-    comando_resultado_detalhado,
-    comando_listar_enquetes,
-    comando_encerrar,
-    comando_apagar_enquete,
 )
 
 from handler_gestao import (
@@ -99,22 +88,38 @@ from suporte import (
     suporte_email,
 )
 
+from handler_midia_admin import conv_envio_midia
+from handler_enquete_local import (
+    conv_criar_enquete,
+    receber_voto,
+    voto_ja_registrado,
+    comando_resultado,
+    callback_resultado,
+    comando_resultado_detalhado,
+    comando_listar_enquetes,
+    comando_encerrar,
+    comando_apagar_enquete,
+)
+
 logger = logging.getLogger(__name__)
 
 
 async def erro_global_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    erro = context.error
+    if isinstance(erro, (TimedOut, NetworkError)):
+        logger.warning(f"⚠️ Timeout de rede: {erro}. Aguardando 5s...")
+        await asyncio.sleep(5)
+        return
     logger.error(msg="Exceção capturada pelo bot:", exc_info=context.error)
 
 
 async def verificar_vencimentos(app):
-    """Verifica assinaturas próximas do vencimento e envia alertas escalonados."""
     from datetime import datetime, timedelta, timezone
     from telegram import InlineKeyboardMarkup, InlineKeyboardButton
     from database import supabase
 
     agora = datetime.now(timezone.utc)
 
-    # Faixas de aviso: (dias_restantes_max, dias_restantes_min, código, texto)
     FAIXAS = [
         (7.5, 6.5, "7d", "📅 <b>Faltam 7 dias</b> para seu plano vencer.\n\nRenove agora para não interromper o monitoramento das suas regulações."),
         (3.5, 2.5, "3d", "⏰ <b>Faltam apenas 3 dias!</b>\n\nGaranta a renovação do seu plano para continuar recebendo alertas das suas regulações."),
@@ -129,90 +134,89 @@ async def verificar_vencimentos(app):
             tipo = str(assinatura.get("tipo_plano", "")).lower()
             if not venc or tipo == "cortesia":
                 continue
-
             try:
                 venc_dt = datetime.fromisoformat(str(venc).replace("Z", "+00:00"))
             except Exception:
                 continue
-
             dias_restantes = (venc_dt - agora).total_seconds() / 86400
-
             for mx, mn, codigo, texto_base in FAIXAS:
                 if mn <= dias_restantes < mx:
                     ultimo = assinatura.get("ultimo_aviso")
-
-                    # Não repete o mesmo aviso
                     if ultimo == codigo:
                         break
-
                     chat_id = assinatura.get("chat_id")
-
                     msg = (
                         f"<b>Sua assinatura do VigiaSaúde</b>\n\n"
                         f"{texto_base}\n\n"
                         f"• <b>Plano atual:</b> {tipo.upper()}\n"
                         f"• <b>Vence em:</b> {venc_dt.strftime('%d/%m/%Y')}"
                     )
-
                     teclado = InlineKeyboardMarkup([
                         [InlineKeyboardButton("💳 Renovar Agora", callback_data="planos")]
                     ])
-
                     try:
                         await app.bot.send_message(
-                            chat_id=chat_id,
-                            text=msg,
-                            reply_markup=teclado,
-                            parse_mode="HTML",
+                            chat_id=chat_id, text=msg, reply_markup=teclado, parse_mode="HTML"
                         )
                         logger.info(f"📢 Aviso {codigo} enviado para {chat_id}")
-
-                        # Marca como enviado no banco
-                        supabase.table("assinaturas").update({
-                            "ultimo_aviso": codigo
-                        }).eq("chat_id", str(chat_id)).execute()
-
+                        supabase.table("assinaturas").update({"ultimo_aviso": codigo}).eq("chat_id", str(chat_id)).execute()
                     except Exception as e:
                         logger.error(f"Erro ao enviar aviso para {chat_id}: {e}")
-
-                    break  # só envia 1 aviso por assinatura por execução
-
+                    break
     except Exception as e:
         logger.error(f"Erro na verificação de vencimentos: {e}")
 
 
 async def post_init(app):
-    """Executa tarefas após a inicialização do bot."""
     set_telegram_bot(app.bot)
-
     job_queue = app.job_queue
     if job_queue:
         job_queue.run_repeating(
             lambda _: asyncio.create_task(verificar_vencimentos(app)),
-            interval=6 * 3600,
-            first=60
+            interval=6 * 3600, first=60,
         )
         job_queue.run_repeating(
             lambda _: asyncio.create_task(limpar_pagamentos_pendentes()),
-            interval=6 * 3600,
-            first=90
+            interval=6 * 3600, first=90,
         )
         job_queue.run_repeating(
             lambda _: asyncio.create_task(verificar_pagamentos_pendentes()),
-            interval=300,
-            first=30
+            interval=300, first=30,
         )
-        logger.info("✅ Tarefas agendadas: vencimentos (6h), limpeza (6h), polling MP (5min)")
+        # ⬇️ NOVO: atualiza enquetes a cada 5 segundos
+        from handler_enquete_local import atualizar_enquetes_job
+        job_queue.run_repeating(
+            atualizar_enquetes_job,
+            interval=5, first=5,
+        )
+        logger.info("✅ Tarefas agendadas: vencimentos (6h), limpeza (6h), polling MP (5min), enquetes (5s)")
 
+        # Verifica enquetes expiradas a cada 1 minuto
+        from handler_enquete_local import verificar_enquetes_expiradas
+        job_queue.run_repeating(
+            verificar_enquetes_expiradas,
+            interval=60, first=30,
+        )
+        logger.info("✅ Tarefas agendadas: ... enquetes expiradas (60s)")
 
 def main():
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         raise ValueError("O TELEGRAM_BOT_TOKEN precisa estar configurado nas variáveis de ambiente.")
-        
+
+    request = HTTPXRequest(
+        connection_pool_size=8,
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
+    )
+
     app = (
         ApplicationBuilder()
         .token(token)
+        .request(request)
+        .get_updates_request(request)
         .post_init(post_init)
         .build()
     )
@@ -221,7 +225,7 @@ def main():
     conv_corrigir = ConversationHandler(
         entry_points=[
             CommandHandler("corrigir", iniciar_corrigir),
-            CallbackQueryHandler(selecionar_regulacao_callback, pattern="^corr_reg_")
+            CallbackQueryHandler(selecionar_regulacao_callback, pattern="^corr_reg_"),
         ],
         states={
             SELECIONAR_REGULACAO: [CallbackQueryHandler(selecionar_regulacao_callback, pattern="^corr_reg_")],
@@ -231,13 +235,15 @@ def main():
         fallbacks=[CallbackQueryHandler(selecionar_regulacao_callback, pattern="^cancelar_corr$")],
     )
 
+    # ConversationHandlers
     app.add_handler(conv_cadastro)
     app.add_handler(conv_consulta_especifica)
     app.add_handler(conv_corrigir)
     app.add_handler(conv_excluir)
     app.add_handler(conv_envio_midia)
-    app.add_handler(conv_envio_enquete)
+    app.add_handler(conv_criar_enquete)
 
+    # Comandos públicos
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("iniciar", start))
     app.add_handler(CommandHandler("menu", start))
@@ -250,6 +256,7 @@ def main():
     app.add_handler(CommandHandler("privacidade", comando_privacidade))
     app.add_handler(CommandHandler("suporte", menu_suporte))
 
+    # Comandos admin
     app.add_handler(CommandHandler("admin", comando_menu_admin))
     app.add_handler(CommandHandler("menu_admin", comando_menu_admin))
     app.add_handler(CommandHandler("estatisticas", comando_estatisticas))
@@ -263,46 +270,45 @@ def main():
     app.add_handler(CommandHandler("bloquear", comando_bloquear))
     app.add_handler(CommandHandler("aviso", comando_aviso))
 
+    # Enquetes
+    app.add_handler(CommandHandler("resultado", comando_resultado))
+    app.add_handler(CommandHandler("resultado_detalhado", comando_resultado_detalhado))
+    app.add_handler(CommandHandler("listar_enquetes", comando_listar_enquetes))
+    app.add_handler(CommandHandler("encerrar", comando_encerrar))
+    app.add_handler(CommandHandler("apagar_enquete", comando_apagar_enquete))
+
+    # Handler IA do admin
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, executar_acao_admin),
-        group=1
+        group=1,
     )
 
+    # Callbacks de planos/pagamento
     app.add_handler(CallbackQueryHandler(detalhar_plano, pattern="^plano_"))
     app.add_handler(CallbackQueryHandler(gerar_pagamento_pix, pattern="^pix_"))
     app.add_handler(CallbackQueryHandler(comando_planos, pattern="^planos$"))
     app.add_handler(CallbackQueryHandler(start, pattern="^iniciar$"))
+
+    # Callbacks de suporte
     app.add_handler(CallbackQueryHandler(exibir_resposta_faq, pattern="^faq_"))
     app.add_handler(CallbackQueryHandler(iniciar_atendimento_20, pattern="^iniciar_atendimento_20$"))
     app.add_handler(CallbackQueryHandler(cancelar_suporte, pattern="^fechar_menu$"))
-    app.add_handler(CallbackQueryHandler(
-    suporte_email,
-    pattern="^suporte_email$"
-))
-    app.add_handler(CallbackQueryHandler(
-    mostrar_email_suporte,
-    pattern="^mostrar_email_suporte$"
-))
+    app.add_handler(CallbackQueryHandler(suporte_email, pattern="^suporte_email$"))
+    app.add_handler(CallbackQueryHandler(mostrar_email_suporte, pattern="^mostrar_email_suporte$"))
     app.add_handler(conv_suporte)
 
-    # --- Novos handlers de privacidade e FAQ ---
-    app.add_handler(CallbackQueryHandler(
-        callback_abrir_termo_privacidade,
-        pattern="^abrir_termo_privacidade$"
-    ))
-    app.add_handler(CallbackQueryHandler(
-        callback_privacidade_voltar,
-        pattern="^privacidade_voltar$"
-    ))
-    app.add_handler(CallbackQueryHandler(
-        callback_faq_suporte,
-        pattern="^abrir_faq_suporte$"
-    ))
+    # Callbacks de privacidade
+    app.add_handler(CallbackQueryHandler(callback_abrir_termo_privacidade, pattern="^abrir_termo_privacidade$"))
+    app.add_handler(CallbackQueryHandler(callback_privacidade_voltar, pattern="^privacidade_voltar$"))
+    app.add_handler(CallbackQueryHandler(callback_faq_suporte, pattern="^abrir_faq_suporte$"))
 
-    async def debug_todos_callbacks(update, context):
-        print(f"🔵 CALLBACK RECEBIDO: '{update.callback_query.data}'", flush=True)
-
-    app.add_handler(CallbackQueryHandler(debug_todos_callbacks), group=99)
+    # Callbacks de enquete (voto e admin)
+    app.add_handler(CallbackQueryHandler(receber_voto, pattern="^voto_\\d+_\\d+$"))
+    app.add_handler(CallbackQueryHandler(voto_ja_registrado, pattern="^voto_ja_registrado$"))
+    app.add_handler(CallbackQueryHandler(
+        callback_resultado,
+        pattern="^enq_(encerrar|reabrir|apagar|atualizar)_\\d+$"
+    ))
 
     logger.info("Iniciando o bot VigiaSaude via polling...")
     app.run_polling(drop_pending_updates=True)
@@ -310,12 +316,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-

@@ -47,6 +47,7 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
         "Por favor, digite o <b>número do Cartão SUS</b> do paciente (15 dígitos):",
         parse_mode="HTML", reply_markup=TECLADO_CANCELAR
     )
+    context.user_data["_em_fluxo_admin"] = "cadastro"
     return ETAPA_SUS
 
 async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -155,6 +156,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
             pass
         await context.bot.send_message(chat_id=chat_id, text="❌ Cadastro cancelado pelo usuário.", reply_markup=TECLADO_MENU)
         context.user_data.clear()
+        context.user_data.pop("_em_fluxo_admin", None)
         return ConversationHandler.END
 
     dados_salvar = {
