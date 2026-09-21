@@ -25,6 +25,7 @@ from telegram.warnings import PTBUserWarning
 warnings.filterwarnings("ignore", category=PTBUserWarning)
 
 from config import TELEGRAM_BOT_TOKEN, BOT_SUPORTE_LINK
+from handler_consultas import _montar_msg_html
 from database import (
     ativar_ou_atualizar_assinatura,
     atualizar_campo_regulacao,
@@ -610,29 +611,157 @@ async def faq_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(texto, parse_mode="HTML", reply_markup=teclado)
 
 
+def _deve_notificar(resultado_fms: dict, status_ant: str, posicao_ant: str) -> tuple[bool, str]:
+    """
+    Retorna (True, motivo) se deve notificar, ou (False, motivo) se não.
+    Motivos: 'vencida_1x', 'reativacao', 'status_mudou', 'posicao_mudou',
+             'vencida_ja_avisada', 'sem_mudanca'
+    """
+    status_novo = (resultado_fms.get("situacao") or "").strip()
+    posicao_nova = (resultado_fms.get("posicao_fila") or "").strip()
+    status_ant = (status_ant or "").strip()
+    posicao_ant = (posicao_ant or "").strip()
+
+    status_lower = status_novo.lower()
+    posicao_lower = posicao_nova.lower()
+
+    # 1. VENCIDA — só notifica UMA vez
+    if "vencid" in status_lower or "expirad" in status_lower:
+        if "vencid" in status_ant.lower() or "expirad" in status_ant.lower():
+            return False, "vencida_ja_avisada"
+        return True, "vencida_1x"
+
+    # 2. REATIVAÇÃO — notifica se o status mudou
+    if "reativa" in status_lower:
+        if status_lower != status_ant.lower():
+            return True, "reativacao"
+        return False, "sem_mudanca"
+
+    # 3. MUDANÇA DE STATUS
+    if status_lower != status_ant.lower():
+        return True, "status_mudou"
+
+    # 4. MUDANÇA DE POSIÇÃO NA FILA
+    if (
+        posicao_nova
+        and posicao_lower not in ("não informada", "n/i", "nao informada", "")
+        and posicao_nova != posicao_ant
+    ):
+        return True, "posicao_mudou"
+
+    return False, "sem_mudanca"
+
+
 async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
-    logger.info("Varredura automática iniciada...")
+    """Varredura automática: consulta FMS, filtra mudanças relevantes e notifica."""
+    logger.info("🔍 Varredura automática iniciada...")
+
     try:
         regulacoes = buscar_todas_regulacoes_ativas()
         if not regulacoes:
+            logger.info("Nenhuma regulação ativa para verificar.")
             return
+
+        # Deduplicação por (numero_reg + chat_id)
+        unicos = {}
         for reg in regulacoes:
-            num_reg = (
-                reg.get("numero_reg")
-                or reg.get("numero_regulacao")
-                or reg.get("id_regulacao")
-            )
-            chat_id = (
-                reg.get("chat_id") or reg.get("id_do_chat") or reg.get("telegram_id")
-            )
+            num = str(reg.get("numero_reg") or "").strip()
+            cid = str(reg.get("chat_id") or "").strip()
+            if num and cid:
+                unicos[f"{num}::{cid}"] = reg
+        regulacoes = list(unicos.values())
+
+        total = len(regulacoes)
+        verificadas = 0
+        notificadas = 0
+        ignoradas = 0
+
+        # Cache: evita consultar a FMS várias vezes para o mesmo numero_reg
+        cache_fms: dict[str, dict] = {}
+
+        for reg in regulacoes:
+            num_reg = reg.get("numero_reg")
+            chat_id = reg.get("chat_id")
+            status_ant = (reg.get("status_anterior") or "").strip()
+            posicao_ant = (reg.get("posicao_anterior") or "").strip()
+
             if not num_reg or not chat_id:
                 continue
-            resultado_fms = await consultar_status_fms(str(num_reg))
-            if isinstance(resultado_fms, dict) and resultado_fms.get("sucesso"):
-                status_novo = resultado_fms.get("situacao") or "Informada no portal"
-            await asyncio.sleep(0.1)
+
+            num_key = str(num_reg).strip()
+
+            if num_key in cache_fms:
+                resultado_fms = cache_fms[num_key]
+            else:
+                try:
+                    resultado_fms = await consultar_status_fms(num_key)
+                    cache_fms[num_key] = resultado_fms
+                except Exception as e:
+                    logger.error(f"Erro ao consultar {num_reg}: {e}")
+                    continue
+
+            if not (isinstance(resultado_fms, dict) and resultado_fms.get("sucesso")):
+                continue
+
+            verificadas += 1
+
+            deve, motivo = _deve_notificar(resultado_fms, status_ant, posicao_ant)
+
+            if not deve:
+                logger.info(f"⏭️ {num_reg} (chat {chat_id}): ignorado ({motivo})")
+                ignoradas += 1
+                continue
+
+                        # ─── NOTIFICAR ───
+            logger.info(f"🔔 {num_reg} (chat {chat_id}): notificando ({motivo})")
+
+            try:
+                nome_paciente = reg.get("nome_paciente") or "Não informado"
+                data_nascimento = reg.get("data_nascimento") or "Não informada"
+                email = reg.get("email") or "Não informado"
+
+                msg = _montar_msg_html(
+                    num_reg=str(num_reg),
+                    resultado=resultado_fms,
+                    reg_db=reg,
+                    titulo="🔔 <b>ATUALIZAÇÃO DE REGULAÇÃO</b>",
+                )
+
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=msg,
+                    parse_mode="HTML",
+                )
+
+                # Atualiza status_anterior e posicao_anterior desse registro
+                try:
+                    from database import supabase as sb
+                    status_novo = (resultado_fms.get("situacao") or "").strip()
+                    posicao_nova = (resultado_fms.get("posicao_fila") or "").strip()
+                    sb.table("AlertaSUS_2.0").update({
+                        "status_anterior": status_novo,
+                        "posicao_anterior": posicao_nova,
+                    }).eq("numero_reg", str(num_reg)).eq(
+                        "chat_id", str(chat_id)
+                    ).execute()
+                    logger.info(f"✅ Atualizado: {num_reg} / chat {chat_id}")
+                except Exception as e:
+                    logger.error(f"Erro ao salvar no banco: {e}")
+
+                notificadas += 1
+
+            except Exception as e:
+                logger.error(f"Erro ao notificar {chat_id}: {e}")
+
+            await asyncio.sleep(0.5)
+
+        logger.info(
+            f"✅ Varredura concluída: {verificadas}/{total} verificadas, "
+            f"{notificadas} notificada(s), {ignoradas} ignorada(s)."
+        )
+
     except Exception as e:
-        logger.error(f"Erro na varredura: {e}")
+        logger.error(f"Erro na varredura automática: {e}")
 
 
 # --- ALIASES ---
@@ -672,6 +801,10 @@ conv_consulta_especifica = ConversationHandler(
         CommandHandler("verificar_especifico", iniciar_verificar_especifico),
         CallbackQueryHandler(
             iniciar_verificar_especifico, pattern="^verificar_especifico$"
+        ),
+        # ✅ NOVO: reentra no estado se o usuário clicar no botão depois de reiniciar o bot
+        CallbackQueryHandler(
+            processar_verificar_especifico, pattern="^ver_esp_"
         ),
     ],
     states={

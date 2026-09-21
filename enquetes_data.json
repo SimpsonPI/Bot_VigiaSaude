@@ -1,0 +1,106 @@
+{
+  "proximo_id": 8,
+  "enquetes": {
+    "2": {
+      "id": 2,
+      "pergunta": "Está gostando  do VigiaSaúde?",
+      "opcoes": [
+        "Sim, adorando",
+        "Mais ou menos, pode melhorar",
+        "Não, tenho problemas com ele."
+      ],
+      "criador_id": "5242040324",
+      "criada_em": "2026-09-19T12:51:56.420805+00:00",
+      "ativa": false,
+      "votos": {
+        "5444152614": {
+          "nome": "Maria Antônia",
+          "opcao_idx": 0,
+          "votado_em": "2026-09-19T12:52:21.038625+00:00"
+        },
+        "5242040324": {
+          "nome": "Lincoln Simpson",
+          "opcao_idx": 1,
+          "votado_em": "2026-09-19T12:52:31.650065+00:00"
+        }
+      },
+      "mensagens": {
+        "5242040324": 987,
+        "5444152614": 988
+      }
+    },
+    "4": {
+      "id": 4,
+      "pergunta": "Como está o dia hoje para você?",
+      "opcoes": [
+        "Maravilhoso",
+        "Não muito bom, tenho alguns problemas para  resolver",
+        "Não está nada bom."
+      ],
+      "criador_id": "5242040324",
+      "criada_em": "2026-09-19T13:40:06.768149+00:00",
+      "ativa": false,
+      "votos": {
+        "5242040324": {
+          "nome": "Lincoln Simpson",
+          "opcao_idx": 0,
+          "votado_em": "2026-09-19T13:40:30.706863+00:00"
+        },
+        "5444152614": {
+          "nome": "Maria Antônia",
+          "opcao_idx": 0,
+          "votado_em": "2026-09-19T13:40:35.171025+00:00"
+        }
+      },
+      "fecha_em": "2026-09-19T13:45:06.785185+00:00",
+      "mensagens": {}
+    },
+    "6": {
+      "id": 6,
+      "pergunta": "Qual sua principal dificuldade no VigiaSaúde?",
+      "opcoes": [
+        "Cadastrar",
+        "Corrigir",
+        "Excluir",
+        "Informações do bot"
+      ],
+      "criador_id": "5242040324",
+      "criada_em": "2026-09-19T16:19:17.558045+00:00",
+      "ativa": false,
+      "votos": {
+        "5242040324": {
+          "nome": "Lincoln Simpson",
+          "opcao_idx": 2,
+          "votado_em": "2026-09-19T16:19:33.160943+00:00"
+        },
+        "5444152614": {
+          "nome": "Maria Antônia",
+          "opcao_idx": 3,
+          "votado_em": "2026-09-19T16:20:04.696728+00:00"
+        }
+      },
+      "fecha_em": "2026-09-19T16:24:17.649667+00:00",
+      "mensagens": {}
+    },
+    "7": {
+      "id": 7,
+      "pergunta": "Está gostando do VigiaSaude?",
+      "opcoes": [
+        "Sim, adorando",
+        "Mais ou menos, pode melhorar"
+      ],
+      "criador_id": "5242040324",
+      "criada_em": "2026-09-20T15:28:49.390133+00:00",
+      "ativa": false,
+      "votos": {
+        "5242040324": {
+          "nome": "Lincoln Simpson",
+          "opcao_idx": 0,
+          "votado_em": "2026-09-20T15:29:00.960398+00:00"
+        }
+      },
+      "fecha_em": "2026-09-20T15:33:49.444489+00:00",
+      "mensagens": {}
+    }
+  }
+}

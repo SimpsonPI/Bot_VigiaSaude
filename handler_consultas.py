@@ -13,6 +13,23 @@ CONSULTAR_ID = 1
 
 DISCLAIMER_TEXTO = "Serviço independente de monitoramento. Não possuímos vínculo oficial com a FMS ou Prefeitura de Teresina."
 
+def emoji_por_status(status: str | None) -> str:
+    """Retorna o emoji correspondente ao status da regulação."""
+    if not status:
+        return "⚪"
+    s = str(status).strip().lower()
+    if "agend" in s:
+        return "🟢"
+    if "autoriz" in s:
+        return "🔵"
+    if "fila" in s or "aguard" in s or "marcad" in s:
+        return "🟡"
+    if "cancel" in s or "vencid" in s or "expirad" in s:
+        return "🔴"
+    if "atendid" in s or "realizad" in s or "concluid" in s:
+        return "🟣"
+    return "⚪"
+
 def _mascarar_nome_custom(nome: str) -> str:
     """Retorna: Primeiro nome + iniciais. Ex: 'João Silva Santos' -> 'João S. S.'"""
     if not nome or str(nome).lower() in ["none", "não informado", ""]:
@@ -32,7 +49,7 @@ def _mascarar_sus_custom(sus: str) -> str:
         return s
     return f"{s[:3]}{'*' * 5}{s[-3:]}"
 
-def _montar_msg_html(num_reg: str, resultado: dict, reg_db=None) -> str:
+def _montar_msg_html(num_reg: str, resultado: dict, reg_db=None, titulo: str = "📋 <b>STATUS DA REGULAÇÃO</b>") -> str:
     cartao_sus_raw = ""
     nome_paciente_raw = ""
     cbo = "Não informado"
@@ -68,7 +85,7 @@ def _montar_msg_html(num_reg: str, resultado: dict, reg_db=None) -> str:
         telefone = None
 
     linhas = [
-        "📋 <b>STATUS DA REGULAÇÃO</b>",
+        titulo,
         "",
         f"<b>ID Regulação:</b> <code>{escape(str(num_reg))}</code>",
         f"<b>Cartão SUS:</b> <code>{escape(str(cartao_sus_exibicao))}</code>",
@@ -201,16 +218,25 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
             num_reg = reg.get("numero_reg")
             nome_bruto = reg.get("nome_paciente", "")
             cbo = reg.get("cbo", "")
-            
+            status_reg = reg.get("status_anterior") or ""
+
             cbo_str = f" ({cbo.strip().upper()})" if cbo and str(cbo).strip().upper() not in ["NONE", "N/A", ""] else ""
-            rotulo_botao = f"📄 {num_reg} - {_mascarar_nome_custom(nome_bruto)}{cbo_str}"
+            emoji = emoji_por_status(status_reg)
+            rotulo_botao = f"{emoji} {num_reg} - {_mascarar_nome_custom(nome_bruto)}{cbo_str}"
 
             teclado_botoes.append([InlineKeyboardButton(rotulo_botao, callback_data=f"ver_esp_{num_reg}")])
 
         teclado_botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_ver_esp")])
         reply_markup = InlineKeyboardMarkup(teclado_botoes)
 
-        msg = "🔍 <b>Selecione qual regulação deseja verificar:</b>\n<i>Ou se preferir, digite o número do ID da regulação abaixo:</i>"
+        msg = (
+            "🔍 <b>Selecione qual regulação deseja verificar:</b>\n"
+            "<i>Ou se preferir, digite o número do ID da regulação abaixo:</i>\n\n"
+            "<b>Legenda:</b>\n"
+            "🟢 Agendada   🔵 Autorizada\n"
+            "🟡 Em fila    🔴 Cancelada\n"
+            "🟣 Atendida   ⚪ Sem status"
+        )
         
         # 3. Substitui a mensagem de carregamento pelo menu final com os botões
         if msg_carregando:
@@ -231,31 +257,66 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
 
 # Adicione também esta função para processar o clique/digitação da consulta específica com a mensagem de carregamento:
 async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    if query:
-        await query.answer()
-        # Extrai o número do callback_data (ex: "ver_esp_123456" -> "123456")
-        num_reg = query.data.replace("ver_esp_", "")
-        msg_alvo = query.message
-    else:
-        num_reg = update.message.text.strip()
-        msg_alvo = update.message
-
-    msg_carregando = f"🔄 Consultando a regulação <b>{num_reg}</b> na FMS... Por favor, aguarde."
-    await msg_alvo.reply_text(msg_carregando, parse_mode="HTML")
-
+    """Processa o clique/digitação da consulta específica."""
     try:
+        if update.callback_query:
+            query = update.callback_query
+            await query.answer()
+            num_reg = query.data.replace("ver_esp_", "").strip()
+            msg_alvo = query.message
+        elif update.message:
+            num_reg = update.message.text.strip()
+            msg_alvo = update.message
+        else:
+            context.user_data.pop("_em_fluxo_admin", None)
+            return ConversationHandler.END
+
+        msg_carregando = (
+            f"🔄 Consultando a regulação <b>{num_reg}</b> na FMS... "
+            "Por favor, aguarde."
+        )
+        await msg_alvo.reply_text(msg_carregando, parse_mode="HTML")
+
+        # Consulta a FMS
         resultado = await consultar_status_fms(num_reg)
-        
-        # Busca os dados complementares salvos no Supabase para montar a mensagem completa
-        res_db = supabase.table("AlertaSUS_2.0").select("*").eq("numero_reg", num_reg).execute()
+
+        # Busca os dados complementares salvos no Supabase
+        res_db = (
+            supabase.table("AlertaSUS_2.0")
+            .select("*")
+            .eq("numero_reg", num_reg)
+            .execute()
+        )
         reg_data = res_db.data[0] if res_db.data else {}
 
+        # Monta e envia a mensagem final
         msg_html = _montar_msg_html(num_reg, resultado, reg_data)
         await msg_alvo.reply_text(msg_html, parse_mode="HTML")
-        await msg_alvo.reply_text("✅ Consulta concluída!")
+
+        # Atualiza o status_anterior no banco (para uso da varredura automática)
+        try:
+            if isinstance(resultado, dict) and resultado.get("sucesso"):
+                status_novo = (resultado.get("situacao") or "Informada no portal").strip()
+                supabase.table("AlertaSUS_2.0").update(
+                    {"status_anterior": status_novo}
+                ).eq("numero_reg", num_reg).eq(
+                    "chat_id", str(update.effective_user.id)
+                ).execute()
+        except Exception as e:
+            logger.error(f"Erro ao atualizar status_anterior: {e}")
+
     except Exception as e:
-        logger.error(f"Erro ao consultar regulação específica {num_reg}: {e}")
-        await msg_alvo.reply_text("⚠️ Ocorreu um erro ao consultar esta regulação na FMS. Tente novamente mais tarde.")
+        logger.error(f"Erro em processar_verificar_especifico: {e}")
+        try:
+            alvo = update.effective_message
+            if alvo:
+                await alvo.reply_text(
+                    "⚠️ Ocorreu um erro ao consultar esta regulação. "
+                    "Tente novamente mais tarde."
+                )
+        except Exception:
+            pass
+    finally:
+        context.user_data.pop("_em_fluxo_admin", None)
 
     return ConversationHandler.END
