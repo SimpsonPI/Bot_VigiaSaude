@@ -208,7 +208,7 @@ async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict
 
     try:
         async with httpx.AsyncClient(
-            follow_redirects=True, timeout=12.0, headers=headers
+            follow_redirects=True, timeout=25.0, headers=headers
         ) as client:
             resposta = await client.get(url_fms_target)
             if resposta.status_code == 200 and "nenhum registro" not in resposta.text.lower():
@@ -224,7 +224,7 @@ async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict
 
     for tentativa in range(1, max_tentativas + 1):
         try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=45.0) as client:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=120.0) as client:
                 resposta = await client.get(scraper_url)
 
                 if resposta.status_code != 200:

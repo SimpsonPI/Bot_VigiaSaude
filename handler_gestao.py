@@ -1,5 +1,4 @@
 import logging
-from streamlit import context
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 from database import supabase

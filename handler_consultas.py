@@ -18,16 +18,27 @@ def emoji_por_status(status: str | None) -> str:
     if not status:
         return "⚪"
     s = str(status).strip().lower()
+
+    # 🔵 Vencida / Expirada
+    if "vencid" in s or "expirad" in s:
+        return "🔵"
+
+    # 🟣 Reativar / Reativação
+    if "reativ" in s:
+        return "🟣"
+
+    # 🔴 Cancelada
+    if "cancel" in s:
+        return "🔴"
+
+    # 🟢 Agendada
     if "agend" in s:
         return "🟢"
-    if "autoriz" in s:
-        return "🔵"
+
+    # 🟡 Em fila / Aguardando / Marcada
     if "fila" in s or "aguard" in s or "marcad" in s:
         return "🟡"
-    if "cancel" in s or "vencid" in s or "expirad" in s:
-        return "🔴"
-    if "atendid" in s or "realizad" in s or "concluid" in s:
-        return "🟣"
+
     return "⚪"
 
 def _mascarar_nome_custom(nome: str) -> str:
@@ -233,9 +244,9 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
             "🔍 <b>Selecione qual regulação deseja verificar:</b>\n"
             "<i>Ou se preferir, digite o número do ID da regulação abaixo:</i>\n\n"
             "<b>Legenda:</b>\n"
-            "🟢 Agendada   🔵 Autorizada\n"
-            "🟡 Em fila    🔴 Cancelada\n"
-            "🟣 Atendida   ⚪ Sem status"
+            "🟢 Agendada    🔵 Vencida\n"
+            "🟡 Em fila     🔴 Cancelada\n"
+            "🟣 Reativar    ⚪ Sem status"
         )
         
         # 3. Substitui a mensagem de carregamento pelo menu final com os botões

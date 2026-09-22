@@ -277,10 +277,11 @@ def usuario_tem_acesso(plano_info: dict) -> bool:
 
 
 async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("🔵 comando_planos FOI CHAMADO", flush=True)
+    """Tela unificada: mostra status atual + planos disponíveis para assinatura."""
     user_id = update.effective_user.id
-    print(f"🔵 user_id = {user_id}", flush=True)
     chat_id_str = str(user_id)
+
+    # ─── Busca dados do usuário no Supabase ───
     try:
         res = (
             supabase.table("assinaturas")
@@ -294,80 +295,108 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Erro ao consultar assinaturas: {e}")
         dados = []
 
-    print(f"🔵 dados retornados = {len(dados) if dados else 0}", flush=True)
     plano_info = dados[0] if dados else {}
     tipo_plano = str(plano_info.get("tipo_plano", "")).strip().lower()
     is_cortesia = tipo_plano == "cortesia"
     is_degustacao = tipo_plano == "degustacao"
     is_ativo = usuario_tem_acesso(plano_info)
-    print(
-        f"🔵 tipo_plano={tipo_plano} is_ativo={is_ativo} is_degustacao={is_degustacao}",
-        flush=True,
-    )
 
-    if is_ativo and not is_degustacao:
-        from datetime import datetime, timezone
+    # ─── Calcula dias restantes ───
+    from datetime import datetime, timezone
 
+    venc = plano_info.get("data_vencimento")
+    dias_restantes = None
+    venc_txt = None
+
+    if venc:
+        try:
+            venc_dt = datetime.fromisoformat(str(venc).replace("Z", "+00:00"))
+            dias_restantes = max(0, (venc_dt - datetime.now(timezone.utc)).days)
+            venc_txt = venc_dt.strftime("%d/%m/%Y")
+        except Exception:
+            pass
+
+    # ─── Monta o cabeçalho com o status atual ───
+    if is_cortesia:
+        cabecalho = (
+            "👑 <b>Você é Cortesia VIP!</b>\n\n"
+            "• <b>Plano:</b> Cortesia (Ilimitado)\n"
+            "• <b>Status:</b> Ativo 🟢\n"
+            "• <b>Vencimento:</b> Sem vencimento\n"
+        )
+    elif is_degustacao and is_ativo:
+        dias_txt = f"{dias_restantes} dia(s)" if dias_restantes is not None else "?"
+        cabecalho = (
+            "🎁 <b>Você está na Degustação (Grátis)</b>\n\n"
+            "• <b>Plano:</b> Degustação\n"
+            "• <b>Status:</b> Ativo 🟢\n"
+            f"• <b>Vence em:</b> {venc_txt or '—'}\n"
+            f"• <b>Dias restantes:</b> {dias_txt}\n"
+        )
+    elif is_ativo:
         nomes_planos = {
             "pro": "Pro",
             "pro_trimestral": "Pro Trimestral",
             "trimestral": "Pro Trimestral",
             "pro_semestral": "Pro Semestral",
             "semestral": "Pro Semestral",
-            "cortesia": "Cortesia VIP 👑",
         }
         tipo_formatado = nomes_planos.get(tipo_plano, "Pro")
+        dias_txt = f"{dias_restantes} dia(s)" if dias_restantes is not None else "—"
 
-        venc = plano_info.get("data_vencimento")
-        linha_vencimento = ""
-        if venc:
-            try:
-                venc_dt = datetime.fromisoformat(str(venc).replace("Z", "+00:00"))
-                dias = max(0, (venc_dt - datetime.now(timezone.utc)).days)
-                linha_vencimento = (
-                    f"• <b>Vence em:</b> {venc_dt.strftime('%d/%m/%Y')}\n"
-                    f"• <b>Dias restantes:</b> {dias}\n"
-                )
-            except Exception:
-                pass
+        # Alerta se estiver perto de vencer
+        alerta_venc = ""
+        if dias_restantes is not None and dias_restantes <= 3:
+            alerta_venc = "\n⚠️ <b>Atenção: seu plano está prestes a vencer!</b>\n"
 
-        texto = (
+        cabecalho = (
             f"✨ <b>Sua Assinatura está Ativa!</b>\n\n"
             f"• <b>Plano:</b> {tipo_formatado}\n"
             f"• <b>Status:</b> Ativo 🟢\n"
-            f"{linha_vencimento}"
+            f"• <b>Vence em:</b> {venc_txt or '—'}\n"
+            f"• <b>Dias restantes:</b> {dias_txt}\n"
+            f"{alerta_venc}"
         )
-        teclado = None
-
-    elif is_ativo and is_degustacao:
-        from datetime import datetime, timezone
-
-        venc = plano_info.get("data_vencimento")
-        dias = "?"
-        if venc:
-            try:
-                venc_dt = datetime.fromisoformat(str(venc).replace("Z", "+00:00"))
-                dias = max(0, (venc_dt - datetime.now(timezone.utc)).days)
-            except Exception:
-                pass
-
-        texto = (
-            f"🎁 <b>Degustação Ativa — {dias} dia(s) restante(s)</b>\n\n"
-            "Assine antes do fim do teste para não perder o acesso:"
-        )
-        teclado = await obter_menu_planos(user_id)
     else:
-        texto = "💳 <b>Planos e Assinaturas — VigiaSaude</b>\nEscolha um plano abaixo:"
-        teclado = await obter_menu_planos(user_id)
+        cabecalho = (
+            "💳 <b>Você ainda não possui um plano ativo</b>\n\n"
+            "Ative uma degustação gratuita ou assine um dos nossos planos.\n"
+        )
 
+    # ─── Monta o bloco de planos disponíveis ───
+    planos_txt = (
+        "\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "💎 <b>Planos Disponíveis</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "• ⭐ <b>Trimestral</b> — R$ 9,99 (3 meses)\n"
+        "  <i>Até 5 regulações monitoradas</i>\n\n"
+        "• 🚀 <b>Semestral</b> — R$ 14,99 (6 meses)\n"
+        "  <i>Até 9 regulações monitoradas</i>\n\n"
+        "💠 <b>Pagamento:</b> Pix (QR Code ou Copia e Cola)\n"
+        "⚡ <b>Liberação:</b> Instantânea após a confirmação\n"
+    )
+
+    # ─── Junta tudo ───
+    texto_final = cabecalho + planos_txt
+
+    # ─── Cria os botões ───
+    teclado = await obter_menu_planos(user_id)
+
+    # ─── Envia ───
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(
-            texto, parse_mode="HTML", reply_markup=teclado
-        )
+        try:
+            await update.callback_query.edit_message_text(
+                texto_final, parse_mode="HTML", reply_markup=teclado
+            )
+        except Exception:
+            await update.callback_query.message.reply_text(
+                texto_final, parse_mode="HTML", reply_markup=teclado
+            )
     else:
         await update.message.reply_text(
-            texto, parse_mode="HTML", reply_markup=teclado
+            texto_final, parse_mode="HTML", reply_markup=teclado
         )
 
 

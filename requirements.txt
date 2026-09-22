@@ -1,12 +1,7 @@
-python-telegram-bot[job-queue]
+python-telegram-bot[job-queue]==22.5
 httpx>=0.27.0
-supabase
+supabase>=2.0.0
 python-dotenv==1.0.1
-streamlit
-aiogram
-supabase
-apscheduler
-python-dotenv
-beautifulsoup4
-requests
-
+apscheduler>=3.10.0
+beautifulsoup4>=4.12.0
+requests>=2.31.0
