@@ -1,6 +1,7 @@
 import asyncio
 from html import escape
 import logging
+from time import timezone
 import warnings
 
 from telegram import (
@@ -200,7 +201,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     nome = user.first_name or "Usuário"
 
     mensagem = (
-        f"👋 Olá, <b>{nome}</b>! Bem-vindo ao <b>VigiaSaude</b>.\n\n"
+        f"👋 Olá, <b>{nome}</b>! Bem-vindo (a) ao <b>VigiaSaude</b>.\n\n"
         f"🆔 <b>Seu ID do Telegram:</b> <code>{user.id}</code>\n\n"
         "Acesse todas as opções e comandos diretamente pelo menu nativo do Telegram "
         "(botão <b>[/]</b> ao lado da barra de digitação)."
@@ -480,6 +481,94 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard_botoes),
     )
 
+def verificar_plano_ativo(user_id: int) -> tuple[bool, dict]:
+    """
+    Verifica se o usuário tem plano ativo.
+    Retorna (ativo: bool, info: dict)
+    """
+    from datetime import datetime, timezone
+    from database import supabase
+
+    try:
+        res = (
+            supabase.table("assinaturas")
+            .select("*")
+            .eq("chat_id", str(user_id))
+            .order("created_at", desc=True)
+            .execute()
+        )
+        dados = res.data if res and hasattr(res, "data") else []
+    except Exception as e:
+        logger.error(f"Erro ao verificar plano: {e}")
+        return False, {}
+
+    if not dados:
+        return False, {}
+
+    info = dados[0]
+    status = str(info.get("status", "")).strip().lower()
+    tipo = str(info.get("tipo_plano", "")).strip().lower()
+
+    # Cortesia sempre ativa
+    if tipo == "cortesia":
+        return True, info
+
+    # Status precisa ser ativo
+    if status not in ("ativo", "active", "ativa"):
+        return False, info
+
+    # Verifica vencimento
+    venc = info.get("data_vencimento")
+    if not venc:
+        return False, info
+
+    try:
+        venc_dt = datetime.fromisoformat(str(venc).replace("Z", "+00:00"))
+        from datetime import timedelta
+        if datetime.now(timezone.utc) >= (venc_dt - timedelta(hours=12)):
+            return False, info
+    except Exception as e:
+        logger.error(f"Erro ao parsear vencimento: {e}")
+        return False, info
+
+    return True, info
+
+
+async def enviar_alerta_plano_expirado(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Envia mensagem acolhedora informando que o plano expirou."""
+    teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 Ver Planos e Renovar", callback_data="planos")],
+        [InlineKeyboardButton("❓ Tirar dúvidas", callback_data="atendimento_faq")],
+        [InlineKeyboardButton("👤 Falar com Atendente", callback_data="atendimento_humanizado")],
+    ])
+
+    texto = (
+        "🕊️ <b>Olá! Sentimos sua falta por aqui...</b>\n\n"
+        "Percebemos que seu plano do <b>VigiaSaúde</b> chegou ao fim, "
+        "mas não se preocupe — é rapidinho para reativar! 💙\n\n"
+
+        "🌟 <b>O que você perde quando o plano expira:</b>\n"
+        "• 🔕 <b>Sem alertas automáticos</b> — você não será mais avisado quando sua regulação mudar de status\n"
+        "• 📊 <b>Sem consultas rápidas</b> — o status das suas regulações fica indisponível\n"
+        "• 🏥 <b>Sem monitoramento contínuo</b> — você pode perder prazos importantes\n\n"
+
+        "💚 <b>Reative agora e continue no controle:</b>\n"
+        "• ⭐ <b>Trimestral</b> — R$ 9,99 (3 meses)\n"
+        "• 🚀 <b>Semestral</b> — R$ 14,99 (6 meses)\n\n"
+
+        "🎁 <i>Renovação em menos de 1 minuto, direto pelo Pix.</i>\n\n"
+
+        "Toque em <b>\"Ver Planos e Renovar\"</b> abaixo para continuar cuidando da sua saúde. 💙"
+    )
+
+    if update.callback_query:
+        try:
+            await update.callback_query.answer()
+            await update.callback_query.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
+        except Exception:
+            await update.callback_query.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
+    elif update.message:
+        await update.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
 
 async def comando_privacidade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     teclado = InlineKeyboardMarkup(
@@ -643,11 +732,9 @@ async def faq_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def _deve_notificar(resultado_fms: dict, status_ant: str, posicao_ant: str) -> tuple[bool, str]:
     """
     Retorna (True, motivo) se deve notificar, ou (False, motivo) se não.
-    Motivos: 'vencida_1x', 'reativacao', 'status_mudou', 'posicao_mudou',
-             'vencida_ja_avisada', 'sem_mudanca'
     """
-    status_novo = (resultado_fms.get("situacao") or "").strip()
-    posicao_nova = (resultado_fms.get("posicao_fila") or "").strip()
+    status_novo = str(resultado_fms.get("situacao") or "").strip()
+    posicao_nova = str(resultado_fms.get("posicao_fila") or "").strip()
     status_ant = (status_ant or "").strip()
     posicao_ant = (posicao_ant or "").strip()
 
@@ -682,7 +769,43 @@ def _deve_notificar(resultado_fms: dict, status_ant: str, posicao_ant: str) -> t
 
 
 async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
-    """Varredura automática: consulta FMS, filtra mudanças relevantes e notifica."""
+    """Varredura automática: diferencia status (completo) de fila (simples).
+    Só roda se passou pelo menos 6h desde a última execução (proteção contra restart)."""
+    from teaser_storage import pode_enviar_teaser, registrar_envio_teaser
+    from datetime import datetime, timezone
+
+    # ═══════════════════════════════════════════════════════════
+    # 🚩 PROTEÇÃO: só roda se passou 6h desde a última varredura
+    # ═══════════════════════════════════════════════════════════
+    try:
+        from database import supabase as sb_check
+        res_check = sb_check.table("config_sistema").select("valor").eq("chave", "ultima_varredura").execute()
+        if res_check.data:
+            ultima_str = res_check.data[0]["valor"]
+            ultima = datetime.fromisoformat(str(ultima_str).replace("Z", "+00:00"))
+            diff_seg = (datetime.now(timezone.utc) - ultima).total_seconds()
+            if diff_seg < 6 * 3600 - 60:  # margem de 60s
+                logger.info(
+                    f"⏭️ Varredura ignorada: última rodou há {diff_seg/60:.0f} min "
+                    f"(<6h). Reinício não vai duplicar notificações."
+                )
+                return
+    except Exception as e:
+        logger.warning(f"Erro ao checar última varredura: {e}")
+
+    # Registra que a varredura vai rodar AGORA
+    try:
+        from database import supabase as sb_save
+        sb_save.table("config_sistema").upsert({
+            "chave": "ultima_varredura",
+            "valor": datetime.now(timezone.utc).isoformat(),
+        }).execute()
+    except Exception as e:
+        logger.warning(f"Erro ao salvar timestamp da varredura: {e}")
+
+    # ═══════════════════════════════════════════════════════════
+    # VARREDURA (código original)
+    # ═══════════════════════════════════════════════════════════
     logger.info("🔍 Varredura automática iniciada...")
 
     try:
@@ -702,11 +825,13 @@ async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
 
         total = len(regulacoes)
         verificadas = 0
-        notificadas = 0
+        notif_status = 0
+        notif_fila = 0
+        teasers = 0
         ignoradas = 0
 
-        # Cache: evita consultar a FMS várias vezes para o mesmo numero_reg
         cache_fms: dict[str, dict] = {}
+        mudancas_por_usuario: dict[str, list] = {}
 
         for reg in regulacoes:
             num_reg = reg.get("numero_reg")
@@ -741,56 +866,160 @@ async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
                 ignoradas += 1
                 continue
 
-                        # ─── NOTIFICAR ───
-            logger.info(f"🔔 {num_reg} (chat {chat_id}): notificando ({motivo})")
+            # Atualiza status no banco (para os dois casos)
+            try:
+                from database import supabase as sb
+                status_novo = (resultado_fms.get("situacao") or "").strip()
+                posicao_nova = (resultado_fms.get("posicao_fila") or "").strip()
+                sb.table("AlertaSUS_2.0").update({
+                    "status_anterior": status_novo,
+                    "posicao_anterior": posicao_nova,
+                }).eq("numero_reg", str(num_reg)).eq(
+                    "chat_id", str(chat_id)
+                ).execute()
+            except Exception as e:
+                logger.error(f"Erro ao salvar no banco: {e}")
+
+            # Verifica se o usuário tem plano ativo
+            ativo, info = verificar_plano_ativo(chat_id)
+
+            if ativo:
+                # 📩 Usuário ativo
+                if motivo == "posicao_mudou":
+                    # Apenas alerta simples de mudança de fila
+                    logger.info(f"📊 {num_reg} (chat {chat_id}): notificando fila")
+                    try:
+                        msg = _montar_msg_fila_simples(str(num_reg), resultado_fms, reg)
+                        await context.bot.send_message(
+                            chat_id=chat_id,
+                            text=msg,
+                            parse_mode="HTML",
+                        )
+                        notif_fila += 1
+                    except Exception as e:
+                        logger.error(f"Erro ao notificar fila {chat_id}: {e}")
+                else:
+                    # Mudança de status → mensagem completa
+                    logger.info(f"🔔 {num_reg} (chat {chat_id}): notificando status ({motivo})")
+                    try:
+                        msg = _montar_msg_html(
+                            num_reg=str(num_reg),
+                            resultado=resultado_fms,
+                            reg_db=reg,
+                            titulo="🔔 <b>ATUALIZAÇÃO DE REGULAÇÃO</b>",
+                        )
+                        await context.bot.send_message(
+                            chat_id=chat_id,
+                            text=msg,
+                            parse_mode="HTML",
+                        )
+                        notif_status += 1
+                    except Exception as e:
+                        logger.error(f"Erro ao notificar status {chat_id}: {e}")
+            else:
+                # 🔒 Usuário expirado → acumula teaser
+                logger.info(f"🎁 {num_reg} (chat {chat_id}): acumulando para teaser")
+                mudancas_por_usuario.setdefault(str(chat_id), []).append({
+                    "num_reg": num_reg,
+                    "resultado": resultado_fms,
+                    "reg_db": reg,
+                    "motivo": motivo,
+                })
+
+            await asyncio.sleep(0.5)
+
+        # ─── Envia teasers (1 por usuário) ───
+        for chat_id, mudancas in mudancas_por_usuario.items():
+            if not pode_enviar_teaser(chat_id):
+                logger.info(f"⏭️ Teaser para {chat_id}: bloqueado (opt-out ou <24h)")
+                continue
 
             try:
-                nome_paciente = reg.get("nome_paciente") or "Não informado"
-                data_nascimento = reg.get("data_nascimento") or "Não informada"
-                email = reg.get("email") or "Não informado"
-
-                msg = _montar_msg_html(
-                    num_reg=str(num_reg),
-                    resultado=resultado_fms,
-                    reg_db=reg,
-                    titulo="🔔 <b>ATUALIZAÇÃO DE REGULAÇÃO</b>",
-                )
-
+                msg = _montar_msg_teaser(mudancas)
+                teclado = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💳 Ver Planos e Renovar", callback_data="planos")],
+                    [InlineKeyboardButton("🔕 Não quero receber mais", callback_data="optout_teaser")],
+                ])
                 await context.bot.send_message(
                     chat_id=chat_id,
                     text=msg,
                     parse_mode="HTML",
+                    reply_markup=teclado,
                 )
-
-                # Atualiza status_anterior e posicao_anterior desse registro
-                try:
-                    from database import supabase as sb
-                    status_novo = (resultado_fms.get("situacao") or "").strip()
-                    posicao_nova = (resultado_fms.get("posicao_fila") or "").strip()
-                    sb.table("AlertaSUS_2.0").update({
-                        "status_anterior": status_novo,
-                        "posicao_anterior": posicao_nova,
-                    }).eq("numero_reg", str(num_reg)).eq(
-                        "chat_id", str(chat_id)
-                    ).execute()
-                    logger.info(f"✅ Atualizado: {num_reg} / chat {chat_id}")
-                except Exception as e:
-                    logger.error(f"Erro ao salvar no banco: {e}")
-
-                notificadas += 1
-
+                registrar_envio_teaser(chat_id)
+                teasers += 1
+                logger.info(f"🎁 Teaser enviado para {chat_id} ({len(mudancas)} mudanças)")
             except Exception as e:
-                logger.error(f"Erro ao notificar {chat_id}: {e}")
+                logger.error(f"Erro ao enviar teaser para {chat_id}: {e}")
 
             await asyncio.sleep(0.5)
 
         logger.info(
-            f"✅ Varredura concluída: {verificadas}/{total} verificadas, "
-            f"{notificadas} notificada(s), {ignoradas} ignorada(s)."
+            f"✅ Varredura: {verificadas}/{total} verificadas | "
+            f"{notif_status} status | {notif_fila} fila | {teasers} teasers | {ignoradas} ignoradas"
         )
 
     except Exception as e:
         logger.error(f"Erro na varredura automática: {e}")
+
+def _montar_msg_fila_simples(num_reg: str, resultado: dict, reg_db: dict) -> str:
+    """Mensagem simples apenas avisando que a posição na fila mudou."""
+    num_esc = escape(str(num_reg))
+    cbo = escape((reg_db.get("cbo") or "Não informado").upper())
+    procedimento = escape((reg_db.get("procedimento") or "Não informado").upper())
+    posicao = escape(str(resultado.get("posicao_fila") or "Não informada"))
+    status = escape(str(resultado.get("situacao") or "—"))
+
+    return (
+        "📊 <b>ATUALIZAÇÃO NA FILA DE ESPERA</b>\n\n"
+        f"🆔 <b>Regulação:</b> <code>{num_esc}</code>\n"
+        f"🩺 <b>CBO:</b> {cbo}\n"
+        f"🏥 <b>Procedimento:</b> {procedimento}\n\n"
+        f"🔔 Sua posição na fila foi atualizada!\n"
+        f"• <b>Posição atual:</b> {posicao}\n"
+        f"• <b>Status:</b> {status}\n\n"
+        f"<i>Você continua na fila. Assim que houver uma mudança de status, "
+        f"avisaremos com mais detalhes.</i>"
+    )
+
+def _montar_msg_teaser(mudancas: list) -> str:
+    """
+    Monta mensagem teaser para usuários com plano expirado.
+    mudancas: lista de dicts com num_reg, resultado, reg_db, motivo
+    """
+    total = len(mudancas)
+
+    if total == 1:
+        cabecalho = "🔔 <b>Olá! Uma novidade apareceu...</b>\n\n"
+    else:
+        cabecalho = f"🔔 <b>Olá! {total} novidades apareceram enquanto você esteve fora!</b>\n\n"
+
+    # Lista de regulações que mudaram (sem detalhes)
+    linhas_regs = ""
+    for m in mudancas[:5]:  # máximo 5
+        num = m["num_reg"]
+        procedimento = (m["reg_db"].get("procedimento") or "Não informado").upper()
+        linhas_regs += f"• <code>{num}</code> — {procedimento}\n"
+
+    if total > 5:
+        linhas_regs += f"• <i>...e mais {total - 5} regulação(ões)</i>\n"
+
+    texto = (
+        f"{cabecalho}"
+        f"<b>Suas regulações com atualização:</b>\n"
+        f"{linhas_regs}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔒 <b>Detalhes disponíveis apenas para assinantes</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"⚠️ Houve <b>mudança real</b> no status das suas regulações. "
+        f"Para ver <b>o que mudou</b> (status, posição na fila, datas), "
+        f"reative seu plano agora:\n\n"
+        f"• ⭐ <b>Trimestral</b> — R$ 9,99 (3 meses)\n"
+        f"• 🚀 <b>Semestral</b> — R$ 14,99 (6 meses)\n\n"
+        f"⏱️ <i>Reativação em menos de 1 minuto via Pix.</i>"
+    )
+
+    return texto
 
 
 # --- ALIASES ---
@@ -1133,6 +1362,46 @@ async def faq_governo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await query.edit_message_text(texto, parse_mode="HTML", reply_markup=teclado)
 
+async def callback_optout_teaser(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Usuário clicou em 'Não quero receber mais'."""
+    from teaser_storage import ativar_optout, desativar_optout, esta_em_optout
+
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = str(query.from_user.id)
+
+    if esta_em_optout(chat_id):
+        # Já está em opt-out — reativar
+        desativar_optout(chat_id)
+        texto = (
+            "✅ <b>Pronto! Você voltará a receber os alertas de atualização.</b>\n\n"
+            "Se mudar de ideia novamente, é só tocar no botão abaixo."
+        )
+        teclado = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔕 Não quero receber mais", callback_data="optout_teaser")]
+        ])
+    else:
+        # Ativa opt-out
+        ativar_optout(chat_id)
+        texto = (
+            "🔕 <b>Entendido! Não enviaremos mais alertas de atualização.</b>\n\n"
+            "Você continuará recebendo apenas:\n"
+            "• Confirmações de pagamento\n"
+            "• Respostas do suporte\n\n"
+            "Se quiser reativar os alertas, toque no botão abaixo."
+        )
+        teclado = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔔 Quero receber novamente", callback_data="optout_teaser")]
+        ])
+
+    try:
+        await query.edit_message_reply_markup(reply_markup=teclado)
+    except Exception:
+        pass
+
+    await query.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
+
 
 # --- EXPORTAÇÃO DE SÍMBOLOS DO HANDLER ATUALIZADA ---
 __all__ = [
@@ -1162,6 +1431,7 @@ __all__ = [
     "comando_privacidade",
     "callback_faq_suporte",
     "callback_privacidade_voltar",
+    "callback_optout_teaser",
     "comando_planos",
     "cancelar_operacao",
     "configurar_menu_comandos",

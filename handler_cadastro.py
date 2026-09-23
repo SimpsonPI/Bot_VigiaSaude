@@ -41,6 +41,15 @@ async def receber_procedimento(update: Update, context: ContextTypes.DEFAULT_TYP
     # Restante do código do termo LGPD...
 
 async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # 🔒 Bloqueio de plano expirado
+    from handler import verificar_plano_ativo, enviar_alerta_plano_expirado
+    user_id = update.effective_user.id
+    ativo, info = verificar_plano_ativo(user_id)
+    if not ativo:
+        await enviar_alerta_plano_expirado(update, context)
+        return ConversationHandler.END
+
+    # ... resto do código existente
     context.user_data.clear()
     await update.message.reply_text(
         "📝 <b>Iniciando cadastro de nova regulação.</b>\n\n"

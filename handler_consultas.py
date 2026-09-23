@@ -19,17 +19,17 @@ def emoji_por_status(status: str | None) -> str:
         return "⚪"
     s = str(status).strip().lower()
 
-    # 🔵 Vencida / Expirada
+    # 🔴 Vencida / Expirada
     if "vencid" in s or "expirad" in s:
-        return "🔵"
+        return "🔴"
 
     # 🟣 Reativar / Reativação
     if "reativ" in s:
         return "🟣"
 
-    # 🔴 Cancelada
+    # 🔵 Cancelada
     if "cancel" in s:
-        return "🔴"
+        return "🔵"
 
     # 🟢 Agendada
     if "agend" in s:
@@ -145,6 +145,15 @@ async def enviar_resposta(update: Update, texto: str, parse_mode="HTML", reply_m
         await update.message.reply_text(texto, parse_mode=parse_mode, reply_markup=reply_markup)
 
 async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 🔒 Bloqueio de plano expirado
+    from handler import verificar_plano_ativo, enviar_alerta_plano_expirado
+    user_id = update.effective_user.id
+    ativo, info = verificar_plano_ativo(user_id)
+    if not ativo:
+        await enviar_alerta_plano_expirado(update, context)
+        return
+
+    # ... resto do código existente
     user_id = update.effective_user.id
     
     try:
@@ -199,6 +208,15 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
         await enviar_resposta(update, "⚠️ Não foi possível recuperar os dados no momento. Tente novamente mais tarde.")
 
 async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # 🔒 Bloqueio de plano expirado
+    from handler import verificar_plano_ativo, enviar_alerta_plano_expirado
+    user_id = update.effective_user.id
+    ativo, info = verificar_plano_ativo(user_id)
+    if not ativo:
+        await enviar_alerta_plano_expirado(update, context)
+        return ConversationHandler.END
+
+    # ... resto do código existente
     try:
         user_id = update.effective_user.id
         
@@ -244,8 +262,8 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
             "🔍 <b>Selecione qual regulação deseja verificar:</b>\n"
             "<i>Ou se preferir, digite o número do ID da regulação abaixo:</i>\n\n"
             "<b>Legenda:</b>\n"
-            "🟢 Agendada    🔵 Vencida\n"
-            "🟡 Em fila     🔴 Cancelada\n"
+            "🟢 Agendada    🔵 Cancelada\n"
+            "🟡 Em fila     🔴 Vencida\n"
             "🟣 Reativar    ⚪ Sem status"
         )
         
@@ -270,6 +288,14 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
 async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Processa o clique/digitação da consulta específica."""
     try:
+        # 🔒 Bloqueio de plano expirado
+        from handler import verificar_plano_ativo, enviar_alerta_plano_expirado
+        user_id = update.effective_user.id
+        ativo, info = verificar_plano_ativo(user_id)
+        if not ativo:
+            await enviar_alerta_plano_expirado(update, context)
+            return ConversationHandler.END
+
         if update.callback_query:
             query = update.callback_query
             await query.answer()
@@ -304,7 +330,7 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
         msg_html = _montar_msg_html(num_reg, resultado, reg_data)
         await msg_alvo.reply_text(msg_html, parse_mode="HTML")
 
-        # Atualiza o status_anterior no banco (para uso da varredura automática)
+        # Atualiza o status_anterior no banco
         try:
             if isinstance(resultado, dict) and resultado.get("sucesso"):
                 status_novo = (resultado.get("situacao") or "Informada no portal").strip()

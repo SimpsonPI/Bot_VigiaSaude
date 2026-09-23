@@ -4,3 +4,4 @@ main_backup.py
 .venv/
 __pycache__/
 *.pyc
+teaser_data.json

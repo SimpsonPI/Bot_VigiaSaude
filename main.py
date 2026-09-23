@@ -4,7 +4,7 @@ load_dotenv()
 from handler_consultas import (
     comando_verificar_todas,
     iniciar_verificar_especifico,
-    processar_verificar_especifico,   # <-- ADICIONE
+    processar_verificar_especifico,
 )
 
 import logging
@@ -54,6 +54,7 @@ from handler import (
     callback_faq_suporte,
     callback_privacidade_voltar,
     callback_abrir_termo_privacidade,
+    callback_optout_teaser,
 )
 
 from handler_gestao import (
@@ -183,14 +184,14 @@ async def post_init(app):
         job_queue.run_repeating(
             lambda _: asyncio.create_task(verificar_vencimentos(app)),
             interval=6 * 3600,
-            first=60,
+            first=180,
         )
 
         # Limpeza de pagamentos pendentes (6h)
         job_queue.run_repeating(
             lambda _: asyncio.create_task(limpar_pagamentos_pendentes()),
             interval=6 * 3600,
-            first=90,
+            first=180,
         )
 
         # Polling do Mercado Pago (5 min)
@@ -321,6 +322,7 @@ def main():
     app.add_handler(CallbackQueryHandler(callback_abrir_termo_privacidade, pattern="^abrir_termo_privacidade$"))
     app.add_handler(CallbackQueryHandler(callback_privacidade_voltar, pattern="^privacidade_voltar$"))
     app.add_handler(CallbackQueryHandler(callback_faq_suporte, pattern="^abrir_faq_suporte$"))
+    app.add_handler(CallbackQueryHandler(callback_optout_teaser, pattern="^optout_teaser$"))
 
     # Callbacks de enquete (voto e admin)
     app.add_handler(CallbackQueryHandler(receber_voto, pattern="^voto_\\d+_\\d+$"))
