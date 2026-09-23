@@ -262,9 +262,9 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
             "🔍 <b>Selecione qual regulação deseja verificar:</b>\n"
             "<i>Ou se preferir, digite o número do ID da regulação abaixo:</i>\n\n"
             "<b>Legenda:</b>\n"
-            "🟢 Agendada    🔵 Cancelada\n"
-            "🟡 Em fila     🔴 Vencida\n"
-            "🟣 Reativar    ⚪ Sem status"
+            "<code>🟢 Agendada      🔵 Vencida\n"
+            "🟡 Em fila       🔴 Cancelada\n"
+            "🟣 Reativar      ⚪ Sem status</code>"
         )
         
         # 3. Substitui a mensagem de carregamento pelo menu final com os botões

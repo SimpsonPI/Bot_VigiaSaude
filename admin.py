@@ -109,7 +109,10 @@ async def comando_detalhes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args:
-        await update.message.reply_text("⚠️ <b>Uso correto:</b> <code>/detalhes &lt;TELEGRAM_ID&gt;</code>", parse_mode="HTML")
+        await update.message.reply_text(
+            "⚠️ <b>Uso correto:</b> <code>/detalhes &lt;TELEGRAM_ID&gt;</code>",
+            parse_mode="HTML"
+        )
         return
 
     target_id = context.args[0].strip()
@@ -119,20 +122,78 @@ async def comando_detalhes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dados = response.data
 
         if not dados:
-            await update.message.reply_text(f"ℹ️ Nenhum registro encontrado para o ID <code>{target_id}</code>.", parse_mode="HTML")
+            await update.message.reply_text(
+                f"ℹ️ Nenhum registro encontrado para o ID <code>{target_id}</code>.",
+                parse_mode="HTML"
+            )
             return
 
         user_data = dados[0]
+
+        # ─── Formata as datas ───
+        from datetime import datetime, timezone
+
+        def fmt_data(iso_str):
+            if not iso_str:
+                return "—"
+            try:
+                dt = datetime.fromisoformat(str(iso_str).replace("Z", "+00:00"))
+                return dt.strftime("%d/%m/%Y às %H:%M")
+            except Exception:
+                return str(iso_str)
+
+        # ─── Formata limite_ids ───
+        limite = user_data.get("limite_ids")
+        if limite is None or limite == "":
+            limite_txt = "Ilimitado"
+        else:
+            limite_txt = str(limite)
+
+        # ─── Formata MP ID ───
+        mp_id = user_data.get("mp_payment_id")
+        mp_txt = f"<code>{mp_id}</code>" if mp_id else "Nenhum"
+
+        # ─── Formata tipo de plano ───
+        tipo = str(user_data.get("tipo_plano") or "—").strip().lower()
+        nomes = {
+            "pro": "Pro",
+            "pro_trimestral": "Pro Trimestral",
+            "trimestral": "Pro Trimestral",
+            "pro_semestral": "Pro Semestral",
+            "semestral": "Pro Semestral",
+            "degustacao": "Degustação 🎁",
+            "cortesia": "Cortesia VIP 👑",
+        }
+        tipo_formatado = nomes.get(tipo, tipo.capitalize())
+
+        # ─── Formata status ───
+        status_raw = str(user_data.get("status") or "—").strip().lower()
+        status_emoji = {
+            "ativo": "🟢 Ativo",
+            "active": "🟢 Ativo",
+            "ativa": "🟢 Ativo",
+            "bloqueado": "🔴 Bloqueado",
+            "expirado": "🟡 Expirado",
+        }.get(status_raw, f"⚪ {status_raw.capitalize()}")
+
+        # ─── Monta mensagem final ───
         texto = (
-            f"🔍 <b>Detalhes do Usuário</b> (<code>{target_id}</code>)\n\n"
-            f"• <b>Plano:</b> {user_data.get('tipo_plano')}\n"
-            f"• <b>Status:</b> {user_data.get('status')}\n"
-            f"• <b>Início:</b> {user_data.get('data_inicio')}\n"
-            f"• <b>Vencimento:</b> {user_data.get('data_vencimento') or 'Não aplicável'}\n"
-            f"• <b>ID Pagamento MP:</b> {user_data.get('mp_payment_id') or 'Nenhum'}\n"
-            f"• <b>Limite IDs:</b> {user_data.get('limite_ids')}\n"
+            f"🔍 <b>Detalhes do Usuário</b>\n"
+            f"🆔 <code>{target_id}</code>\n\n"
+
+            f"👑 <b>Plano:</b> {tipo_formatado}\n"
+            f"📊 <b>Status:</b> {status_emoji}\n"
+            f"📅 <b>Início:</b> {fmt_data(user_data.get('data_inicio'))}\n"
+            f"⏰ <b>Vencimento:</b> {fmt_data(user_data.get('data_vencimento'))}\n\n"
+
+            f"💳 <b>ID Pagamento MP:</b> {mp_txt}\n"
+            f"📈 <b>Limite de Regulações:</b> {limite_txt}\n"
+            f"🎁 <b>Já usou Degustação:</b> {'✅ Sim' if user_data.get('usou_degustacao') else '❌ Não'}\n"
+            f"🔔 <b>Último Aviso Enviado:</b> {user_data.get('ultimo_aviso') or '—'}\n"
         )
+
         await update.message.reply_text(texto, parse_mode="HTML")
+
     except Exception as e:
         logger.error(f"[ADMIN] Erro ao buscar detalhes do usuário {target_id}: {e}")
         await update.message.reply_text("❌ Erro ao consultar dados do usuário.")
