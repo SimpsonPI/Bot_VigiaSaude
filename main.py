@@ -65,6 +65,7 @@ from handler_gestao import (
 from handler_pagamento import gerar_pagamento_pix
 from handler_tarefas import limpar_pagamentos_pendentes
 from pagamento_polling import (
+    _ativar_assinatura,
     verificar_pagamentos_pendentes,
     set_telegram_bot,
 )
@@ -219,7 +220,7 @@ async def post_init(app):
             interval=60, first=30,
         )
         logger.info("✅ Tarefas agendadas: ... enquetes expiradas (60s)")
-
+    
 def main():
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:

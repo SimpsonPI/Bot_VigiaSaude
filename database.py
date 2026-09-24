@@ -74,31 +74,70 @@ def verificar_assinatura_ativa(user_id: int) -> bool:
 
 
 def ativar_ou_atualizar_assinatura(telegram_id: int, tipo_plano: str):
-    """Calcula as datas e realiza o upsert na tabela de assinaturas."""
+    """Calcula as datas e realiza o upsert na tabela de assinaturas.
+    Se o plano atual ainda está ativo, SOMA o novo período ao vencimento existente."""
     try:
         dias_validade = calcular_dias_plano(tipo_plano)
         agora = datetime.now(timezone.utc)
-        vencimento = agora + timedelta(days=dias_validade)
-        
         is_degustacao = "degustacao" in tipo_plano.lower() or "free" in tipo_plano.lower()
+
+        # ─── Define a base do novo vencimento ───
+        base = agora  # padrão
+
+        if not is_degustacao:
+            try:
+                res = (
+                    supabase.table("assinaturas")
+                    .select("data_vencimento, status, tipo_plano")
+                    .eq("chat_id", str(telegram_id))
+                    .order("created_at", desc=True)
+                    .execute()
+                )
+                if res.data:
+                    info = res.data[0]
+                    status_atual = str(info.get("status", "")).lower()
+                    tipo_atual = str(info.get("tipo_plano", "")).lower()
+                    venc_str = info.get("data_vencimento")
+
+                    # Só soma se: status ativo, não é degustação e vencimento é futuro
+                    if (
+                        status_atual in ("ativo", "active", "ativa")
+                        and tipo_atual != "degustacao"
+                        and venc_str
+                    ):
+                        venc_dt = datetime.fromisoformat(
+                            str(venc_str).replace("Z", "+00:00")
+                        )
+                        if venc_dt > agora:
+                            base = venc_dt  # usa o vencimento futuro
+                            logger.info(
+                                f"📅 Soma aplicada: base = {base.strftime('%d/%m/%Y')} "
+                                f"(vencimento atual ainda ativo)"
+                            )
+            except Exception as e:
+                logger.warning(f"Erro ao checar vencimento atual (usando 'agora'): {e}")
+
+        vencimento = base + timedelta(days=dias_validade)
 
         dados = {
             "chat_id": str(telegram_id),
             "tipo_plano": tipo_plano,
             "status": "active",
             "data_inicio": agora.isoformat(),
-            "data_vencimento": vencimento.isoformat()
+            "data_vencimento": vencimento.isoformat(),
         }
 
-        # Se for um plano de degustação, trava a flag usou_degustacao como True
         if is_degustacao:
             dados["usou_degustacao"] = True
 
         resposta = supabase.table("assinaturas").upsert(dados, on_conflict="chat_id").execute()
-        logger.info(f"Assinatura do plano '{tipo_plano}' atualizada para o chat_id: {telegram_id}")
+        logger.info(
+            f"✅ Assinatura '{tipo_plano}' atualizada para {telegram_id} | "
+            f"Vence: {vencimento.strftime('%d/%m/%Y')}"
+        )
         return resposta.data if resposta else True
     except Exception as e:
-        logger.error(f"Erro ao ativar ou atualizar assinatura para o ID {telegram_id}: {e}")
+        logger.error(f"Erro ao ativar/atualizar assinatura para {telegram_id}: {e}")
         return None
 
 

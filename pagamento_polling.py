@@ -17,6 +17,90 @@ sdk = mercadopago.SDK(MERCADOPAGO_ACCESS_TOKEN) if mercadopago else None
 # Bot injetado pelo main.py
 _telegram_bot = None
 
+# ==========================================
+# BENEFÍCIOS DOS PLANOS
+# ==========================================
+BENEFICIOS_PLANO = {
+    "degustacao": {
+        "nome": "Degustação",
+        "emoji": "🎁",
+        "beneficios": [
+            "Até 2 regulações monitoradas",
+            "Notificações em tempo real no Telegram",
+            "Acesso a todas as funcionalidades",
+        ],
+    },
+    "trimestral": {
+        "nome": "Pro Trimestral",
+        "emoji": "⭐",
+        "beneficios": [
+            "Até 5 regulações monitoradas",
+            "Notificações em tempo real no Telegram",
+            "Acompanhamento automático de status",
+            "Suporte via bot de atendimento",
+        ],
+    },
+    "semestral": {
+        "nome": "Pro Semestral",
+        "emoji": "🚀",
+        "beneficios": [
+            "Até 9 regulações monitoradas",
+            "Notificações em tempo real no Telegram",
+            "Acompanhamento automático de status",
+            "Suporte via bot de atendimento",
+        ],
+    },
+    "cortesia": {
+        "nome": "Cortesia VIP",
+        "emoji": "👑",
+        "beneficios": [
+            "Regulações ilimitadas",
+            "Notificações em tempo real no Telegram",
+            "Acompanhamento automático de status",
+            "Suporte prioritário",
+        ],
+    },
+}
+
+
+def _get_beneficios_plano(tipo_plano: str) -> dict:
+    p = str(tipo_plano).lower()
+    if "degustacao" in p:
+        return BENEFICIOS_PLANO["degustacao"]
+    if "semestral" in p:
+        return BENEFICIOS_PLANO["semestral"]
+    if "cortesia" in p:
+        return BENEFICIOS_PLANO["cortesia"]
+    return BENEFICIOS_PLANO["trimestral"]
+
+
+def _montar_mensagem_boas_vindas(tipo_plano, limite_ids, vencimento, is_renovacao: bool) -> str:
+    info = _get_beneficios_plano(tipo_plano)
+    emoji = info["emoji"]
+    nome = info["nome"]
+    benef_list = "\n".join(f"  ✅ {b}" for b in info["beneficios"])
+
+    if is_renovacao:
+        titulo = "🎉 <b>Renovação confirmada!</b>"
+        subtitulo = f"Que bom ter você de volta! Seu plano {emoji} <b>{nome}</b> foi renovado com sucesso."
+    else:
+        titulo = f"{emoji} <b>Bem-vindo ao VigiaSaúde!</b>"
+        subtitulo = f"Seu plano <b>{nome}</b> foi ativado com sucesso e você já pode aproveitar tudo!"
+
+    return (
+        f"{titulo}\n\n"
+        f"{subtitulo}\n\n"
+        f"<b>📦 O que seu plano inclui:</b>\n"
+        f"{benef_list}\n\n"
+        f"<b>📅 Detalhes da assinatura:</b>\n"
+        f"  • <b>Limite de regulações:</b> {limite_ids}\n"
+        f"  • <b>Válido até:</b> {vencimento.strftime('%d/%m/%Y')}\n\n"
+        f"<b>💡 Próximos passos:</b>\n"
+        f"  1. Cadastre suas regulações com /cadastrar_nova\n"
+        f"  2. Acompanhe o status com /verificar_todos\n"
+        f"  3. Gerencie seu plano com /planos\n\n"
+        f"Qualquer dúvida, acesse /suporte. Boas consultas! 🩺"
+    )
 
 def set_telegram_bot(bot):
     global _telegram_bot
@@ -66,8 +150,26 @@ async def _consultar_pagamento_mp(payment_id: str) -> dict | None:
 
 
 async def _ativar_assinatura(chat_id: str, tipo_plano: str, mp_payment_id: str) -> bool:
-    """Ativa/atualiza a assinatura do usuário e notifica."""
+    """Ativa/atualiza a assinatura do usuário e notifica com mensagem de boas-vindas."""
     try:
+        # 1. Detecta se é renovação (já tinha plano ativo antes)
+        is_renovacao = False
+        try:
+            res_ant = supabase.table("assinaturas").select(
+                "tipo_plano, status, data_vencimento"
+            ).eq("chat_id", str(chat_id)).execute()
+            if res_ant.data:
+                ant = res_ant.data[0]
+                tipo_ant = str(ant.get("tipo_plano", "")).lower()
+                status_ant = str(ant.get("status", "")).lower()
+                # Considera renovação se já tinha um plano pago/ativo antes
+                if tipo_ant and tipo_ant not in ("", "none") and status_ant in ("ativo", "active", "ativa"):
+                    is_renovacao = True
+                    logger.info(f"🔄 Renovação detectada para {chat_id} (plano anterior: {tipo_ant})")
+        except Exception as e:
+            logger.warning(f"Erro ao detectar renovação: {e}")
+
+        # 2. Ativa/atualiza assinatura
         dias = _calcular_dias_plano(tipo_plano)
         limite_ids = _limite_por_plano(tipo_plano)
         agora = datetime.now(timezone.utc)
@@ -80,25 +182,24 @@ async def _ativar_assinatura(chat_id: str, tipo_plano: str, mp_payment_id: str) 
             "data_inicio": agora.isoformat(),
             "data_vencimento": vencimento.isoformat(),
             "limite_ids": limite_ids,
+            "ultimo_aviso": None,   # reseta avisos de vencimento
         }, on_conflict="chat_id").execute()
 
         logger.info(
-            f"✅ Assinatura ativada | chat_id={chat_id} | plano={tipo_plano} | "
-            f"limite={limite_ids} | dias={dias} | vence={vencimento.strftime('%d/%m/%Y')}"
+            f"✅ Assinatura {'renovada' if is_renovacao else 'ativada'} | "
+            f"chat_id={chat_id} | plano={tipo_plano} | limite={limite_ids} | "
+            f"dias={dias} | vence={vencimento.strftime('%d/%m/%Y')}"
         )
 
-        # Notifica o usuário
+        # 3. Notifica com mensagem de boas-vindas
         if _telegram_bot:
             try:
+                texto = _montar_mensagem_boas_vindas(
+                    tipo_plano, limite_ids, vencimento, is_renovacao
+                )
                 await _telegram_bot.send_message(
                     chat_id=chat_id,
-                    text=(
-                        "🎉 <b>Pagamento confirmado!</b>\n\n"
-                        f"Seu plano <b>{tipo_plano.upper()}</b> foi ativado com sucesso.\n"
-                        f"• <b>Limite de regulações:</b> {limite_ids}\n"
-                        f"• <b>Validade:</b> até {vencimento.strftime('%d/%m/%Y')}\n\n"
-                        "Aproveite o VigiaSaúde! 🚀"
-                    ),
+                    text=texto,
                     parse_mode="HTML",
                 )
             except Exception as e:

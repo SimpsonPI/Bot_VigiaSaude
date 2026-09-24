@@ -78,10 +78,46 @@ async def processar_pagamento_aprovado(payment_id: str) -> bool:
         except Exception as e:
             logger.warning(f"Erro ao atualizar pagamentos_pix: {e}")
 
-        # 3. Calcula validade
+                # 3. Calcula validade (SOMA se plano atual ainda ativo)
         dias = _calcular_dias_plano(tipo_plano)
         agora = datetime.now(timezone.utc)
-        vencimento = agora + timedelta(days=dias)
+
+        base = agora
+        is_degustacao = "degustacao" in tipo_plano.lower()
+
+        if not is_degustacao:
+            try:
+                res_venc = (
+                    supabase.table("assinaturas")
+                    .select("data_vencimento, status, tipo_plano")
+                    .eq("chat_id", str(chat_id))
+                    .order("created_at", desc=True)
+                    .execute()
+                )
+                if res_venc.data:
+                    info = res_venc.data[0]
+                    status_atual = str(info.get("status", "")).lower()
+                    tipo_atual = str(info.get("tipo_plano", "")).lower()
+                    venc_str = info.get("data_vencimento")
+
+                    if (
+                        status_atual in ("ativo", "active", "ativa")
+                        and tipo_atual != "degustacao"
+                        and venc_str
+                    ):
+                        venc_dt = datetime.fromisoformat(
+                            str(venc_str).replace("Z", "+00:00")
+                        )
+                        if venc_dt > agora:
+                            base = venc_dt
+                            logger.info(
+                                f"📅 Webhook: soma aplicada, base = "
+                                f"{base.strftime('%d/%m/%Y')}"
+                            )
+            except Exception as e:
+                logger.warning(f"Erro ao checar vencimento (webhook): {e}")
+
+        vencimento = base + timedelta(days=dias)
 
         # 4. Ativa assinatura
         supabase.table("assinaturas").upsert({
