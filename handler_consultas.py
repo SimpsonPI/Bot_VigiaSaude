@@ -101,7 +101,7 @@ def _montar_msg_html(num_reg: str, resultado: dict, reg_db=None, titulo: str = "
         f"<b>ID Regulação:</b> <code>{escape(str(num_reg))}</code>",
         f"<b>Cartão SUS:</b> <code>{escape(str(cartao_sus_exibicao))}</code>",
         f"<b>Paciente:</b> {escape(str(nome_exibicao))}",
-        f"<b>CBO:</b> {escape(str(cbo).upper())}",
+        f"<b>Especialidade:</b> {escape(str(cbo).upper())}",
         f"<b>Procedimento:</b> {escape(str(procedimento).upper())}",
         f"<b>Status:</b> {escape(str(situacao))}",
         f"<b>Posição:</b> {escape(str(posicao))}",

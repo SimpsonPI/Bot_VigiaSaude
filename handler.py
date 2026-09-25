@@ -130,7 +130,7 @@ async def callback_faq_suporte(update: Update, context: ContextTypes.DEFAULT_TYP
         "<b>3. Meus dados estão seguros?</b>\n"
         "Sim! Suas informações são tratadas com total privacidade, seguindo diretrizes rígidas de segurança e LGPD.\n\n"
         "<b>4. Como faço para corrigir um número ou procedimento?</b>\n"
-        "Basta utilizar o comando /corrigir no menu principal para atualizar dados como CBO, celular ou nome do paciente.\n\n"
+        "Basta utilizar o comando /corrigir no menu principal para atualizar dados como Especialidade, celular ou nome do paciente.\n\n"
         "<b>5. O bot substitui a fila oficial do SUS?</b>\n"
         "Não. O VigiaSaude é um facilitador de avisos e consultas. A marcação, chamada e gestão de vagas continuam sob responsabilidade exclusiva da Secretaria de Saúde.\n\n"
         "<b>6. Como posso falar com o suporte humano?</b>\n"
@@ -722,7 +722,7 @@ async def faq_seguranca(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def faq_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    texto = "✏️ <b>Como corrigir dados?</b>\n\nUtilize o comando de correção no menu principal para atualizar informações cadastrais ou CBO (Especialidade)."
+    texto = "✏️ <b>Como corrigir dados?</b>\n\nUtilize o comando de correção no menu principal para atualizar informações cadastrais ou Especialidade (Especialidade)."
     teclado = InlineKeyboardMarkup(
         [[InlineKeyboardButton("🔙 Voltar", callback_data="ajuda")]]
     )
@@ -973,7 +973,7 @@ def _montar_msg_fila_simples(num_reg: str, resultado: dict, reg_db: dict) -> str
     return (
         "📊 <b>ATUALIZAÇÃO NA FILA DE ESPERA</b>\n\n"
         f"🆔 <b>Regulação:</b> <code>{num_esc}</code>\n"
-        f"🩺 <b>CBO:</b> {cbo}\n"
+        f"🩺 <b>Especialidade:</b> {cbo}\n"
         f"🏥 <b>Procedimento:</b> {procedimento}\n\n"
         f"🔔 Sua posição na fila foi atualizada!\n"
         f"• <b>Posição atual:</b> {posicao}\n"

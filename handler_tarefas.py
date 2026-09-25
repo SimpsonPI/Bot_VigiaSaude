@@ -99,7 +99,7 @@ async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
                     f"👤 <b>Paciente:</b> {escape(str(nome_paciente))}\n"
                     f"💳 <b>Cartão SUS:</b> {escape(str(cartao_sus))}\n"
                     f"🩺 <b>Procedimento:</b> {escape(str(procedimento))}\n"
-                    f"🏷️ <b>CBO:</b> {escape(str(cbo))}\n"
+                    f"🏷️ <b>Especialidade:</b> {escape(str(cbo))}\n"
                     f"📱 <b>Celular:</b> {escape(str(celular))}\n"
                     "───────────────────────────"
                 )

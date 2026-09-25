@@ -123,7 +123,7 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("⚠️ Digite um número de regulação válido:")
         return ETAPA_REGULACAO
     context.user_data["numero_regulacao"] = num_reg
-    await update.message.reply_text("Informe o código <b>CBO</b> da especialidade (opcional - digite 0 para pular):", parse_mode="HTML")
+    await update.message.reply_text("Informe o código <b>Especialidade</b> da especialidade (opcional - digite 0 para pular):", parse_mode="HTML")
     return ETAPA_CBO
 
 async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

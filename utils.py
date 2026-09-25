@@ -119,7 +119,7 @@ def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> s
         f"<b>ID Regulação:</b> <code>{escape(str(numero_reg))}</code>\n"
         f"<b>Cartão SUS:</b> <code>{escape(str(_mascarar_sus(sus_raw)))}</code>\n"
         f"<b>Paciente:</b> {escape(str(mascarar_nome(paciente_raw)))}\n"
-        f"<b>CBO:</b> {escape(str(cbo))}\n"
+        f"<b>Especialidade:</b> {escape(str(cbo))}\n"
         f"<b>Procedimento:</b> {escape(str(procedimento))}\n"
         f"<b>Status:</b> <b>{escape(str(situacao))}</b>\n"
         f"<b>Posição:</b> {escape(str(posicao))}\n"

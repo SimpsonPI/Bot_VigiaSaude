@@ -75,7 +75,7 @@ async def mostrar_resumo_regulacao(update_or_query, context, num_reg):
             resumo = (
                 f"📋 <b>Regulação:</b> <code>{num_reg}</code>\n"
                 f"👤 <b>Paciente:</b> {reg.get('nome_paciente', 'Não informado')}\n"
-                f"🩺 <b>CBO / Especialidade:</b> {reg.get('cbo', 'Não informado')}\n"
+                f"🩺 <b>Especialidade / Especialidade:</b> {reg.get('cbo', 'Não informado')}\n"
                 f"📱 <b>Celular:</b> {reg.get('celular', 'Não informado')}\n"
                 f"🏥 <b>Procedimento:</b> {reg.get('procedimento', 'Não informado')}\n\n"
                 f"✅ <b>Alteração realizada com sucesso!</b>"
@@ -112,7 +112,7 @@ async def selecionar_regulacao_callback(update: Update, context: ContextTypes.DE
 
         teclado = [
             [InlineKeyboardButton("👤 Nome do Paciente", callback_data="corr_campo_nome_paciente")],
-            [InlineKeyboardButton("🩺 CBO / Especialidade", callback_data="corr_campo_cbo")],
+            [InlineKeyboardButton("🩺 Especialidade / Especialidade", callback_data="corr_campo_cbo")],
             [InlineKeyboardButton("📱 Celular", callback_data="corr_campo_celular")],
             [InlineKeyboardButton("🩺 Procedimento", callback_data="corr_campo_procedimento")],
             [InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")]
