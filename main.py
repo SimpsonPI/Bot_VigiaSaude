@@ -55,6 +55,12 @@ from handler import (
     callback_privacidade_voltar,
     callback_abrir_termo_privacidade,
     callback_optout_teaser,
+    faq_cadastrar,
+    faq_consultar,
+    faq_id,
+    faq_alterar,
+    faq_planos,
+    faq_governo,
 )
 
 from handler_gestao import (
@@ -311,8 +317,13 @@ def main():
     app.add_handler(CallbackQueryHandler(comando_planos, pattern="^planos$"))
     app.add_handler(CallbackQueryHandler(start, pattern="^iniciar$"))
 
-    # Callbacks de suporte
-    app.add_handler(CallbackQueryHandler(exibir_resposta_faq, pattern="^faq_"))
+    # FAQ - handlers específicos (substitui o genérico ^faq_)
+    app.add_handler(CallbackQueryHandler(faq_cadastrar, pattern="^faq_cadastrar$"))
+    app.add_handler(CallbackQueryHandler(faq_consultar, pattern="^faq_consultar$"))
+    app.add_handler(CallbackQueryHandler(faq_id, pattern="^faq_id$"))
+    app.add_handler(CallbackQueryHandler(faq_alterar, pattern="^faq_alterar$"))
+    app.add_handler(CallbackQueryHandler(faq_planos, pattern="^faq_planos$"))
+    app.add_handler(CallbackQueryHandler(faq_governo, pattern="^faq_governo$"))
     app.add_handler(CallbackQueryHandler(iniciar_atendimento_20, pattern="^iniciar_atendimento_20$"))
     app.add_handler(CallbackQueryHandler(cancelar_suporte, pattern="^fechar_menu$"))
     app.add_handler(CallbackQueryHandler(suporte_email, pattern="^suporte_email$"))
