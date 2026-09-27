@@ -251,3 +251,18 @@ def desativar_regulacoes_por_chat_id(chat_id: int):
     except Exception as e:
         logger.error(f"Erro ao desativar regulações do chat_id {chat_id}: {e}")
         return None
+
+def buscar_dados_por_sus(numero_sus: str):
+    """Busca dados de cadastro de uma regulação anterior pelo número do SUS."""
+    try:
+        sus_limpo = str(numero_sus).strip()
+        res = supabase.table("AlertaSUS_2.0").select(
+            "nome_paciente, data_nascimento, celular, chat_id"
+        ).eq("numero_sus", sus_limpo).order("id", desc=True).limit(1).execute()
+
+        if res.data:
+            return res.data[0]
+        return None
+    except Exception as e:
+        logger.error(f"Erro ao buscar dados por SUS: {e}")
+        return None

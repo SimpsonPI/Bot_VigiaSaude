@@ -7,6 +7,7 @@ from utils import (
     DISCLAIMER_TEXTO, TECLADO_MENU, TECLADO_CANCELAR,
     ETAPA_SUS, ETAPA_NOME, ETAPA_CELULAR, ETAPA_NASCIMENTO,
     ETAPA_REGULACAO, ETAPA_CBO, ETAPA_PROCEDIMENTO, ETAPA_LGPD,
+    ETAPA_CONFIRMAR_REUSO,
     formatar_data, formatar_celular, formatar_maiusculo, verificar_se_e_menu_e_executar
 )
 
@@ -41,18 +42,82 @@ async def receber_procedimento(update: Update, context: ContextTypes.DEFAULT_TYP
     # Restante do código do termo LGPD...
 
 async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # 🔒 Bloqueio de plano expirado
-    from handler import verificar_plano_ativo, enviar_alerta_plano_expirado
+    from handler import (
+        verificar_plano_ativo,
+        enviar_alerta_plano_expirado,
+        enviar_oferta_limite_atingido,
+        _obter_limite_plano,
+    )
+    from database import supabase, iniciar_degustacao
+    import logging
+    logger = logging.getLogger(__name__)
+
     user_id = update.effective_user.id
-    ativo, info = verificar_plano_ativo(user_id)
-    if not ativo:
-        await enviar_alerta_plano_expirado(update, context)
+
+    # 1. Verifica se tem registro de assinatura
+    try:
+        res = supabase.table("assinaturas").select(
+            "tipo_plano, status, usou_degustacao, limite_ids"
+        ).eq("chat_id", str(user_id)).execute()
+        tem_registro = bool(res.data)
+        info = res.data[0] if res.data else {}
+        usou_degustacao = info.get("usou_degustacao", False)
+    except Exception as e:
+        logger.error(f"Erro ao consultar assinatura: {e}")
+        tem_registro = False
+        info = {}
+        usou_degustacao = False
+
+    # 2. Usuário NOVO → ativa degustação automaticamente
+    if not tem_registro:
+        try:
+            await iniciar_degustacao(user_id)
+            logger.info(f"🎁 Degustação ativada automaticamente para novo usuário {user_id}")
+            # Recarrega o info
+            res = supabase.table("assinaturas").select(
+                "tipo_plano, status, limite_ids"
+            ).eq("chat_id", str(user_id)).execute()
+            info = res.data[0] if res.data else {}
+        except Exception as e:
+            logger.error(f"Erro ao ativar degustação: {e}")
+    else:
+        # 3. Verifica se o plano está ativo
+        ativo, info_ativo = verificar_plano_ativo(user_id)
+        if not ativo:
+            # 3.1. Nunca usou degustação? Pode usar
+            if not usou_degustacao:
+                try:
+                    await iniciar_degustacao(user_id)
+                    logger.info(f"🎁 Degustação ativada para {user_id}")
+                except Exception as e:
+                    logger.error(f"Erro ao ativar degustação: {e}")
+            # 3.2. Já usou degustação e não tem plano → win-back
+            else:
+                await enviar_alerta_plano_expirado(update, context)
+                return ConversationHandler.END
+        else:
+            info = info_ativo
+
+    # 4. Verifica LIMITE de regulações
+    try:
+        res_count = supabase.table("AlertaSUS_2.0").select("id", count="exact").eq("chat_id", user_id).execute()
+        total_regs = res_count.count if hasattr(res_count, "count") and res_count.count is not None else len(res_count.data or [])
+    except Exception as e:
+        logger.error(f"Erro ao contar regulações: {e}")
+        total_regs = 0
+
+    limite = _obter_limite_plano(info)
+
+    if total_regs >= limite:
+        logger.info(f"⏸️ Limite atingido: {total_regs}/{limite} para {user_id}")
+        await enviar_oferta_limite_atingido(update, context, total_regs, limite)
         return ConversationHandler.END
 
-    # ... resto do código existente
+    # 5. Continua o fluxo
     context.user_data.clear()
     await update.message.reply_text(
         "📝 <b>Iniciando cadastro de nova regulação.</b>\n\n"
+        f"Você tem <b>{total_regs}/{limite}</b> regulações monitoradas.\n\n"
         "Por favor, digite o <b>número do Cartão SUS</b> do paciente (15 dígitos):",
         parse_mode="HTML", reply_markup=TECLADO_CANCELAR
     )
@@ -61,40 +126,103 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
 
 async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
+    import re as _re
+
     chat_id = update.effective_chat.id
-    numero_sus = update.message.text.strip()
-    
+    texto_bruto = update.message.text.strip()
+
+    # Normaliza: mantém só dígitos (remove espaços, pontos, traços)
+    numero_sus = _re.sub(r"\D", "", texto_bruto)
+
+    if not numero_sus:
+        await update.message.reply_text(
+            "⚠️ Não consegui identificar nenhum dígito.\n\n"
+            "Digite o número do Cartão SUS (apenas números):"
+        )
+        return ETAPA_SUS
+
     context.user_data['sus'] = numero_sus
 
     try:
         print(f"DEBUG: Buscando SUS {numero_sus} no Supabase...")
-        # Altere "numero_sus" abaixo se a sua coluna no Supabase tiver outro nome (ex: "cartao_sus")
-        resposta = supabase.table("AlertaSUS_2.0").select("*").eq("numero_sus", numero_sus).execute()
+
+        resposta = supabase.table("AlertaSUS_2.0").select("*").eq(
+            "numero_sus", numero_sus
+        ).execute()
         registros = resposta.data
 
         if registros and len(registros) > 0:
             dados_antigos = registros[0]
-            context.user_data['nome'] = dados_antigos.get('nome_paciente')
-            context.user_data['celular'] = dados_antigos.get('celular')
-            context.user_data['nascimento'] = dados_antigos.get('data_nascimento')
-            context.user_data['cbo'] = dados_antigos.get('cbo')
-            context.user_data['procedimento'] = dados_antigos.get('procedimento')
+            context.user_data['_dados_reuso_pendente'] = {
+                'nome': dados_antigos.get('nome_paciente'),
+                'celular': dados_antigos.get('celular'),
+                'nascimento': dados_antigos.get('data_nascimento'),
+                'cbo': dados_antigos.get('cbo'),
+                'procedimento': dados_antigos.get('procedimento'),
+            }
 
-            print("DEBUG: SUS encontrado! Indo direto para ETAPA_REGULACAO.")
+            nome = dados_antigos.get('nome_paciente') or "Não informado"
+            celular = dados_antigos.get('celular') or "Não informado"
+            nasc = dados_antigos.get('data_nascimento') or "Não informado"
+
+            print("DEBUG: SUS encontrado! Aguardando confirmação.")
+
+            teclado = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Usar esses dados", callback_data="reuso_sim")],
+                [InlineKeyboardButton("🔄 Digitar do zero", callback_data="reuso_nao")],
+            ])
+
             await update.message.reply_text(
-                f"🔍 <b>Cartão do SUS já cadastrado!</b>\n"
-                f"Autopreenchemos os dados de: <b>{dados_antigos.get('nome_paciente')}</b>.\n\n"
-                f"Agora, por favor, digite apenas o <b>Número da Regulação</b>:",
-                parse_mode="HTML"
+                f"🔍 <b>Cartão do SUS já cadastrado!</b>\n\n"
+                f"Encontramos os seguintes dados:\n"
+                f"👤 <b>Nome:</b> {nome}\n"
+                f"📱 <b>Celular:</b> {celular}\n"
+                f"📅 <b>Nascimento:</b> {nasc}\n\n"
+                f"Deseja usar esses dados?",
+                parse_mode="HTML",
+                reply_markup=teclado,
             )
-            return ETAPA_REGULACAO
-            
+            return ETAPA_CONFIRMAR_REUSO
+
     except Exception as e:
         print(f"ERRO no bloco do SUS: {e}")
 
     print("DEBUG: SUS não encontrado. Indo para ETAPA_NOME.")
     await update.message.reply_text("Qual o nome completo do paciente?")
     return ETAPA_NOME
+
+async def callback_reuso_dados(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Processa a escolha do usuário: reusar dados ou digitar do zero."""
+    query = update.callback_query
+    await query.answer()
+
+    dados = context.user_data.get('_dados_reuso_pendente') or {}
+
+    if query.data == "reuso_sim":
+        context.user_data['nome'] = dados.get('nome')
+        context.user_data['celular'] = dados.get('celular')
+        context.user_data['nascimento'] = dados.get('nascimento')
+        context.user_data['cbo'] = dados.get('cbo')
+        context.user_data['procedimento'] = dados.get('procedimento')
+
+        await query.edit_message_text(
+            "✅ <b>Dados carregados com sucesso!</b>\n\n"
+            "Agora digite apenas o <b>Número da Regulação</b>:",
+            parse_mode="HTML",
+        )
+        return ETAPA_REGULACAO
+
+    else:
+        for campo in ('nome', 'celular', 'nascimento', 'cbo', 'procedimento'):
+            context.user_data[campo] = None
+        context.user_data.pop('_dados_reuso_pendente', None)
+
+        await query.edit_message_text(
+            "Ok! Vamos começar do zero.\n\n"
+            "👤 Qual o <b>nome completo do paciente</b>?",
+            parse_mode="HTML",
+        )
+        return ETAPA_NOME
 
 async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
@@ -209,13 +337,20 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
         parse_mode="HTML"
     )
 
-    # 3. Envia o Menu Principal
+        # 3. Envia o Menu Principal
     print("DEBUG 7: Enviando menu principal...")
     await context.bot.send_message(
         chat_id=chat_id,
         text="O que deseja fazer agora?",
         reply_markup=TECLADO_MENU
     )
+
+    # 4. Marketing: oferta pós-1ª regulação
+    try:
+        from handler import enviar_oferta_primeira_regulacao
+        await enviar_oferta_primeira_regulacao(update, context, str(user_id))
+    except Exception as e:
+        print(f"DEBUG MARKETING: {e}")
 
     context.user_data.clear()
     print("DEBUG 8: Fluxo finalizado com sucesso!")

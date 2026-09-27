@@ -44,6 +44,7 @@ from handler_cadastro import (
     receber_regulacao,
     receber_sus,
     finalizar_cadastro,
+    callback_reuso_dados,
 )
 
 from handler_consultas import (
@@ -68,6 +69,7 @@ from utils import (
     ETAPA_CBO,
     ETAPA_CELULAR,
     ETAPA_LGPD,
+    ETAPA_CONFIRMAR_REUSO,
     ETAPA_NASCIMENTO,
     ETAPA_NOME,
     ETAPA_PROCEDIMENTO,
@@ -425,7 +427,7 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "tipo_plano": "degustacao",
                     "status": "ativo",
                     "data_vencimento": vencimento.isoformat(),
-                    "limite_ids": 999,
+                    "limite_ids": 2,          # ← CORRIGIDO (era 999)
                     "usou_degustacao": True,
                     "ultimo_aviso": None,
                 },
@@ -436,12 +438,12 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         texto = (
             "🎁 <b>Degustação Ativada — 7 dias grátis!</b>\n\n"
-            f"Você tem acesso completo ao VigiaSaúde até <b>{vencimento.strftime('%d/%m/%Y')}</b>.\n\n"
-            "<b>O que você ganha assinando:</b>\n"
-            "✅ Monitoramento ilimitado das regulações\n"
+            f"Você tem acesso ao VigiaSaúde até <b>{vencimento.strftime('%d/%m/%Y')}</b>.\n\n"
+            "<b>O que você ganha na degustação:</b>\n"
+            "✅ Até <b>2 regulações</b> monitoradas\n"
             "✅ Avisos automáticos de mudança de status\n"
-            "✅ Suporte prioritário\n\n"
-            "Aproveite os 7 dias — e assine antes do fim para não perder o acesso:"
+            "✅ Suporte via bot de atendimento\n\n"
+            "💡 <i>Quer monitorar mais regulações? Assine um plano Pro:</i>"
         )
         keyboard_botoes = [
             [
@@ -1085,25 +1087,18 @@ conv_cadastro = ConversationHandler(
     ],
     states={
         ETAPA_SUS: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_sus)],
-        ETAPA_NOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nome)],
-        ETAPA_CELULAR: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_celular)
-        ],
-        ETAPA_NASCIMENTO: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nascimento)
-        ],
-        ETAPA_REGULACAO: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_regulacao)
-        ],
-        ETAPA_CBO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_cbo)],
-        ETAPA_PROCEDIMENTO: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_procedimento)
-        ],
-        ETAPA_LGPD: [
+        ETAPA_CONFIRMAR_REUSO: [          # ← NOVO BLOCO
             CallbackQueryHandler(
-                finalizar_cadastro, pattern="^(aceitar_lgpd|cancelar_cadastro)$"
-            )
+                callback_reuso_dados, pattern="^reuso_(sim|nao)$"
+            ),
         ],
+        ETAPA_NOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nome)],
+        ETAPA_CELULAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_celular)],
+        ETAPA_NASCIMENTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nascimento)],
+        ETAPA_REGULACAO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_regulacao)],
+        ETAPA_CBO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_cbo)],
+        ETAPA_PROCEDIMENTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_procedimento)],
+        ETAPA_LGPD: [CallbackQueryHandler(finalizar_cadastro, pattern="^(aceitar_lgpd|cancelar_cadastro)$")],
     },
     fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
     per_message=False,
@@ -1402,6 +1397,194 @@ async def callback_optout_teaser(update: Update, context: ContextTypes.DEFAULT_T
 
     await query.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
 
+# ==========================================
+# MARKETING: OFERTA APÓS 1ª REGULAÇÃO
+# ==========================================
+
+async def enviar_oferta_primeira_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: str):
+    """
+    Envia oferta de planos APENAS se:
+    - For a 1ª regulação do usuário
+    - Usuário NÃO tiver plano pago ativo
+    """
+    try:
+        # 1. Conta quantas regulações o usuário tem
+        res_regs = supabase.table("AlertaSUS_2.0").select(
+            "id", count="exact"
+        ).eq("chat_id", str(chat_id)).execute()
+
+        total_regs = res_regs.count if hasattr(res_regs, "count") else len(res_regs.data or [])
+
+        # Só dispara se for EXATAMENTE a 1ª regulação
+        if total_regs != 1:
+            logger.info(f"⏭️ Oferta ignorada (usuário tem {total_regs} regulações, não é a 1ª)")
+            return
+
+        # 2. Confirma que NÃO tem plano pago ativo
+        res = supabase.table("assinaturas").select(
+            "tipo_plano, status"
+        ).eq("chat_id", str(chat_id)).execute()
+
+        if res.data:
+            plano = res.data[0]
+            tipo = str(plano.get("tipo_plano") or "").lower()
+            status = str(plano.get("status") or "").lower()
+
+            if status in ("ativo", "active", "ativa") and tipo in (
+                "trimestral", "semestral", "anual",
+                "pro_trimestral", "pro_semestral", "pro_anual", "cortesia",
+            ):
+                logger.info(f"⏭️ Oferta ignorada (já tem plano ativo): {chat_id}")
+                return
+
+        # 3. Monta a mensagem
+        texto = (
+            "🎉 <b>Primeira regulação cadastrada!</b>\n\n"
+            "Agora você vai receber alertas automáticos no Telegram "
+            "sempre que o status mudar.\n\n"
+            "💡 <i>Você está na degustação de 7 dias (até 2 regulações).</i>\n\n"
+            "<b>Quer monitorar mais regulações?</b>\n"
+            "⭐ Trimestral (R$ 9,99) → até 5 regulações / 3 meses\n"
+            "🚀 Semestral (R$ 14,99) → até 9 regulações / 6 meses"
+        )
+
+        teclado = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⭐ Ver Planos Disponíveis", callback_data="planos")],
+        ])
+
+        # 4. Envia
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=texto,
+            parse_mode="HTML",
+            reply_markup=teclado,
+        )
+
+        logger.info(f"📣 Oferta pós-1ª regulação enviada para {chat_id}")
+
+    except Exception as e:
+        logger.error(f"Erro ao enviar oferta pós-1ª regulação: {e}")
+
+        # ==========================================
+# MARKETING: LIMITE DE REGULAÇÕES ATINGIDO
+# ==========================================
+
+def _obter_limite_plano(info: dict) -> int:
+    """Obtém o limite de regulações do plano do usuário."""
+    limite = info.get("limite_ids") if info else None
+    if limite and isinstance(limite, int) and limite > 0:
+        return limite
+
+    try:
+        from pagamento_polling import _limite_por_plano
+        tipo = str(info.get("tipo_plano") or "").lower() if info else ""
+        return _limite_por_plano(tipo)
+    except Exception:
+        return 2  # padrão degustação
+
+
+async def enviar_oferta_limite_atingido(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    total: int,
+    limite: int,
+):
+    """Envia oferta de upgrade quando o usuário atinge o limite do plano."""
+    try:
+        texto = (
+            f"⚠️ <b>Você atingiu o limite do seu plano atual!</b>\n\n"
+            f"📊 <b>Regulações monitoradas:</b> {total}/{limite}\n\n"
+            "Para cadastrar mais regulações, escolha um plano Pro:\n\n"
+            "⭐ <b>Trimestral (R$ 9,99)</b>\n"
+            "   Até 5 regulações / 3 meses\n\n"
+            "🚀 <b>Semestral (R$ 14,99)</b>\n"
+            "   Até 9 regulações / 6 meses\n\n"
+            "💠 <i>Pagamento via Pix, liberação imediata.</i>\n\n"
+            "👇 Escolha seu plano abaixo:"
+        )
+
+        teclado = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⭐ Ver Planos e Fazer Upgrade", callback_data="planos")],
+            [InlineKeyboardButton("👤 Falar com Atendente", callback_data="atendimento_humanizado")],
+        ])
+
+        if update.callback_query:
+            await update.callback_query.message.reply_text(
+                texto, parse_mode="HTML", reply_markup=teclado
+            )
+        elif update.message:
+            await update.message.reply_text(
+                texto, parse_mode="HTML", reply_markup=teclado
+            )
+
+        logger.info(f"📣 Oferta de limite atingido enviada ({total}/{limite})")
+
+    except Exception as e:
+        logger.error(f"Erro ao enviar oferta de limite: {e}")
+
+        # ==========================================
+# MARKETING: EXPIRAÇÃO DA DEGUSTAÇÃO
+# ==========================================
+
+async def enviar_alerta_expiracao(context, chat_id: str, tipo_plano: str, dias: int, data_venc: str):
+    """Envia alerta de expiração escalonado (3d, 1d, 0d)."""
+    from datetime import datetime
+
+    try:
+        venc_dt = datetime.fromisoformat(str(data_venc).replace("Z", "+00:00"))
+        venc_str = venc_dt.strftime("%d/%m/%Y")
+    except Exception:
+        venc_str = data_venc
+
+    if dias == 3:
+        titulo = "📅 <b>Faltam 3 dias!</b>"
+        texto_corpo = (
+            f"Sua degustação do VigiaSaúde termina em <b>3 dias</b> "
+            f"(<b>{venc_str}</b>).\n\n"
+            "Após esse prazo, você <b>perde o monitoramento</b> das suas regulações. "
+            "Para continuar, assine um plano Pro:"
+        )
+        urgencia = ""
+    elif dias == 1:
+        titulo = "⏰ <b>Falta apenas 1 dia!</b>"
+        texto_corpo = (
+            f"Sua degustação termina <b>amanhã</b> (<b>{venc_str}</b>).\n\n"
+            "Não perca o monitoramento das suas regulações. Assine agora:"
+        )
+        urgencia = "\n🔥 <i>Recomendamos garantir hoje para não esquecer!</i>"
+    else:  # 0 dias
+        titulo = "🚨 <b>Sua degustação expira HOJE!</b>"
+        texto_corpo = (
+            f"Última chance: sua degustação acaba <b>hoje</b> (<b>{venc_str}</b>).\n\n"
+            "Após o vencimento, você não receberá mais alertas automáticos. "
+            "Garanta seu acesso agora:"
+        )
+        urgencia = "\n🔥 <i>Não deixe para depois — leva menos de 1 minuto!</i>"
+
+    texto = (
+        f"{titulo}\n\n"
+        f"{texto_corpo}\n\n"
+        "⭐ <b>Trimestral (R$ 9,99)</b> → 5 regulações / 3 meses\n"
+        "🚀 <b>Semestral (R$ 14,99)</b> → 9 regulações / 6 meses\n"
+        f"{urgencia}\n\n"
+        "👇 Escolha seu plano:"
+    )
+
+    teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⭐ Ver Planos e Renovar", callback_data="planos")],
+        [InlineKeyboardButton("👤 Falar com Atendente", callback_data="atendimento_humanizado")],
+    ])
+
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=texto,
+            parse_mode="HTML",
+            reply_markup=teclado,
+        )
+        logger.info(f"📣 Alerta de expiração ({dias}d) enviado para {chat_id}")
+    except Exception as e:
+        logger.error(f"Erro ao enviar alerta de expiração para {chat_id}: {e}")
 
 # --- EXPORTAÇÃO DE SÍMBOLOS DO HANDLER ATUALIZADA ---
 __all__ = [

@@ -23,6 +23,7 @@ ETAPA_REGULACAO = 34
 ETAPA_CBO = 35
 ETAPA_PROCEDIMENTO = 36
 ETAPA_LGPD = 37
+ETAPA_CONFIRMAR_REUSO = 99 
 
 # utils.py
 from telegram import ReplyKeyboardMarkup
