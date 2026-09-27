@@ -258,9 +258,9 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
             )
         ]
     )
-    keyboard.append(
-        [InlineKeyboardButton("📧 Email de Suporte", callback_data="atendimento_email")]
-    )
+    keyboard.append([
+    InlineKeyboardButton("🤖 Central de Atendimento", url="https://t.me/central_vigiasaude_bot")
+])
     return InlineKeyboardMarkup(keyboard)
 
 
