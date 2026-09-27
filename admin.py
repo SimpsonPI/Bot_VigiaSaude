@@ -264,7 +264,12 @@ async def comando_cortesia(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not context.args:
-        await update.message.reply_text("⚠️ <b>Uso correto:</b> <code>/cortesia &lt;TELEGRAM_ID&gt;</code>", parse_mode="HTML")
+        await update.message.reply_text(
+    "⚠️ <b>Uso correto:</b>\n"
+    "<code>/cortesia 123456789</code>\n\n"
+    "<i>Digite o ID numérico, sem os símbolos &lt; &gt;.</i>",
+    parse_mode="HTML"
+)
         return
 
     target_id = context.args[0].strip()
