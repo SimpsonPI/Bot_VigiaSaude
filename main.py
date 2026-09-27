@@ -128,55 +128,62 @@ async def erro_global_handler(update: object, context: ContextTypes.DEFAULT_TYPE
 
 
 async def verificar_vencimentos(app):
-    from datetime import datetime, timedelta, timezone
+    """Verifica assinaturas próximas do vencimento e envia alertas escalonados."""
+    from datetime import datetime, timezone
     from telegram import InlineKeyboardMarkup, InlineKeyboardButton
     from database import supabase
+    from handler import enviar_alerta_expiracao
 
     agora = datetime.now(timezone.utc)
 
-    FAIXAS = [
-        (7.5, 6.5, "7d", "📅 <b>Faltam 7 dias</b> para seu plano vencer.\n\nRenove agora para não interromper o monitoramento das suas regulações."),
-        (3.5, 2.5, "3d", "⏰ <b>Faltam apenas 3 dias!</b>\n\nGaranta a renovação do seu plano para continuar recebendo alertas das suas regulações."),
-        (1.5, 0.5, "1d", "🚨 <b>Seu plano expira AMANHÃ!</b>\n\nRenove agora para não perder o acesso ao monitoramento."),
-        (0.5, -0.5, "expirado", "❌ <b>Seu plano expirou hoje.</b>\n\nRenove para retomar o monitoramento das suas regulações."),
-    ]
-
     try:
         res = supabase.table("assinaturas").select("*").eq("status", "ativo").execute()
+        if not res.data:
+            return
+
         for assinatura in res.data:
             venc = assinatura.get("data_vencimento")
             tipo = str(assinatura.get("tipo_plano", "")).lower()
-            if not venc or tipo == "cortesia":
+            chat_id = assinatura.get("chat_id")
+
+            if not venc or not chat_id:
                 continue
+
+            # Cortesia não expira
+            if tipo == "cortesia":
+                continue
+
             try:
                 venc_dt = datetime.fromisoformat(str(venc).replace("Z", "+00:00"))
             except Exception:
                 continue
+
             dias_restantes = (venc_dt - agora).total_seconds() / 86400
-            for mx, mn, codigo, texto_base in FAIXAS:
-                if mn <= dias_restantes < mx:
-                    ultimo = assinatura.get("ultimo_aviso")
-                    if ultimo == codigo:
-                        break
-                    chat_id = assinatura.get("chat_id")
-                    msg = (
-                        f"<b>Sua assinatura do VigiaSaúde</b>\n\n"
-                        f"{texto_base}\n\n"
-                        f"• <b>Plano atual:</b> {tipo.upper()}\n"
-                        f"• <b>Vence em:</b> {venc_dt.strftime('%d/%m/%Y')}"
-                    )
-                    teclado = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("💳 Renovar Agora", callback_data="planos")]
-                    ])
-                    try:
-                        await app.bot.send_message(
-                            chat_id=chat_id, text=msg, reply_markup=teclado, parse_mode="HTML"
-                        )
-                        logger.info(f"📢 Aviso {codigo} enviado para {chat_id}")
-                        supabase.table("assinaturas").update({"ultimo_aviso": codigo}).eq("chat_id", str(chat_id)).execute()
-                    except Exception as e:
-                        logger.error(f"Erro ao enviar aviso para {chat_id}: {e}")
-                    break
+            ultimo_aviso = str(assinatura.get("ultimo_aviso") or "")
+
+            # Define o alvo de aviso conforme dias restantes
+            alvo = None
+            if 2.5 <= dias_restantes < 3.5 and ultimo_aviso != "3d":
+                alvo = 3
+            elif 0.5 <= dias_restantes < 1.5 and ultimo_aviso not in ("1d", "0d"):
+                alvo = 1
+            elif -0.5 <= dias_restantes < 0.5 and ultimo_aviso != "0d":
+                alvo = 0
+
+            if alvo is None:
+                continue
+
+            # Envia o alerta
+            await enviar_alerta_expiracao(app, str(chat_id), tipo, alvo, venc)
+
+            # Marca no banco para não repetir
+            try:
+                supabase.table("assinaturas").update({
+                    "ultimo_aviso": f"{alvo}d"
+                }).eq("chat_id", str(chat_id)).execute()
+            except Exception as e:
+                logger.warning(f"Erro ao marcar ultimo_aviso para {chat_id}: {e}")
+
     except Exception as e:
         logger.error(f"Erro na verificação de vencimentos: {e}")
 
