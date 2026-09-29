@@ -290,6 +290,20 @@ def montar_mensagem_regulacao(
 
     if isinstance(resultado, dict):
         situacao = resultado.get("situacao") or "Informada no portal"
+
+        # 🔄 Normaliza textos do FMS para algo mais claro ao usuário
+        _sit_lower = str(situacao).strip().lower()
+        if "informada" in _sit_lower:
+            situacao = "Em fila"
+        elif "agendada" in _sit_lower:
+            situacao = "Agendada"
+        elif "vencida" in _sit_lower or "expirada" in _sit_lower:
+            situacao = "Vencida"
+        elif "cancelada" in _sit_lower:
+            situacao = "Cancelada"
+        elif "reativar" in _sit_lower or "reativada" in _sit_lower:
+            situacao = "Reativar"
+
         data_consulta = resultado.get("data_consulta")
         autorizacao = resultado.get("autorizacao")
         estabelecimento = resultado.get("estabelecimento")

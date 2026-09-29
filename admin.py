@@ -230,6 +230,7 @@ async def comando_dar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "chat_id": str(target_id),
             "tipo_plano": nome_plano,
             "status": "ativo",
+            "limite_ids": 999,
             "data_inicio": data_inicio.isoformat(),
             "data_vencimento": data_vencimento.isoformat()
         }, on_conflict="chat_id").execute()
