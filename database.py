@@ -223,10 +223,17 @@ def registrar_consentimento_lgpd(dados_consentimento: dict):
         return True
 
 
-def atualizar_campo_regulacao(num_reg: str, campo: str, valor: str):
-    """Atualiza um determinado campo de uma regulação específica."""
+def atualizar_campo_regulacao(num_reg: str, campo: str, valor: str, chat_id: str = None):
+    """Atualiza um determinado campo de uma regulação específica.
+    
+    Se chat_id for passado, filtra por ele também (evita atualizar regulações
+    compartilhadas de outros usuários).
+    """
     try:
-        res = supabase.table("AlertaSUS_2.0").update({campo: valor}).eq("numero_reg", str(num_reg)).execute()
+        query = supabase.table("AlertaSUS_2.0").update({campo: valor}).eq("numero_reg", str(num_reg))
+        if chat_id is not None:
+            query = query.eq("chat_id", int(chat_id) if str(chat_id).isdigit() else chat_id)
+        res = query.execute()
         return res.data
     except Exception as e:
         logger.error(f"Erro ao atualizar o campo {campo} da regulação {num_reg}: {e}")

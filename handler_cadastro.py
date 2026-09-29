@@ -1,5 +1,6 @@
 # handler_cadastro.py
 import re
+from database import supabase
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 from database import salvar_regulacao, registrar_consentimento_lgpd, supabase
@@ -106,7 +107,12 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
         logger.error(f"Erro ao contar regulações: {e}")
         total_regs = 0
 
-    limite = _obter_limite_plano(info)
+        # Cortesia = acesso ilimitado, nunca bloqueia
+    tipo_atual = str(info.get("tipo_plano") or "").lower()
+    if "cortesia" in tipo_atual:
+        limite = 999
+    else:
+        limite = _obter_limite_plano(info)
 
     if total_regs >= limite:
         logger.info(f"⏸️ Limite atingido: {total_regs}/{limite} para {user_id}")
@@ -121,6 +127,7 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
         "Por favor, digite o <b>número do Cartão SUS</b> do paciente (15 dígitos):",
         parse_mode="HTML", reply_markup=TECLADO_CANCELAR
     )
+    print(f"🔵 DEBUG CADASTRO: setando _em_fluxo_admin=cadastro", flush=True)
     context.user_data["_em_fluxo_admin"] = "cadastro"
     return ETAPA_SUS
 
@@ -241,17 +248,74 @@ async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
     nascimento = formatar_data(update.message.text.strip())
     context.user_data["nascimento"] = nascimento
-    await update.message.reply_text("Agora, por favor, digite o <b>Número da Regulação</b>:", parse_mode="HTML")
+
+    aviso = (
+        "✅ <b>Data de nascimento registrada.</b>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "⚠️ <b>PRÓXIMO PASSO: ID da Regulação</b>\n\n"
+        "Antes de digitar, tenha em mãos o seu <b>comprovante de agendamento</b> e confira:\n\n"
+        "✅ O ID correto no papel\n"
+        "✅ Se os <b>8 dígitos</b> conferem <b>exatamente</b>\n"
+        "✅ Se o ID é da <b>sua</b> regulação\n\n"
+        "❌ <b>Se você digitar o ID errado, o bot pode mostrar "
+        "dados de outro paciente do SUS.</b>\n\n"
+        "📌 <i>Exemplo:</i>\n"
+        "Cadastrar <code>12345678</code> em vez de <code>87654321</code> "
+        "pode trazer um agendamento <b>completamente diferente</b>.\n\n"
+        "💡 O ID tem <b>8 dígitos</b>.\n\n"
+        "<b>Digite o ID da Regulação:</b>"
+    )
+
+    await update.message.reply_text(aviso, parse_mode="HTML")
     return ETAPA_REGULACAO
 
 async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
     num_reg = re.sub(r"\D", "", update.message.text)
+
     if not num_reg:
-        await update.message.reply_text("⚠️ Digite um número de regulação válido:")
+        await update.message.reply_text(
+            "⚠️ Digite um número de regulação válido (apenas dígitos):"
+        )
         return ETAPA_REGULACAO
+
+    # ✅ Validação: ID da regulação tem 8 dígitos
+    if len(num_reg) != 8:
+        await update.message.reply_text(
+            f"⚠️ <b>O ID da regulação deve ter 8 dígitos.</b>\n\n"
+            f"Você digitou <b>{len(num_reg)}</b> dígito(s).\n\n"
+            "📌 <i>Confira no comprovante de agendamento ou na "
+            "unidade básica de saúde.</i>\n\n"
+            "Digite novamente:",
+            parse_mode="HTML",
+        )
+        return ETAPA_REGULACAO
+
+    # ✅ Verifica duplicata na conta do usuário
+    try:
+        chat_id = str(update.effective_user.id)
+        res_dup = supabase.table("AlertaSUS_2.0").select("id").eq(
+            "numero_reg", num_reg
+        ).eq("chat_id", int(chat_id) if chat_id.isdigit() else chat_id).execute()
+
+        if res_dup.data:
+            await update.message.reply_text(
+                f"⚠️ <b>Você já cadastrou a regulação {num_reg}!</b>\n\n"
+                "• Para ver o status: use /verificar_especifico\n"
+                "• Para corrigir dados: use /corrigir\n\n"
+                "O cadastro foi cancelado.",
+                parse_mode="HTML",
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
+    except Exception as e:
+        logger.error(f"Erro ao verificar duplicata no cadastro: {e}")
+
     context.user_data["numero_regulacao"] = num_reg
-    await update.message.reply_text("Informe o código <b>Especialidade</b> da especialidade (opcional - digite 0 para pular):", parse_mode="HTML")
+    await update.message.reply_text(
+        "Informe o código <b>Especialidade</b> (opcional — digite 0 para pular):",
+        parse_mode="HTML",
+    )
     return ETAPA_CBO
 
 async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
