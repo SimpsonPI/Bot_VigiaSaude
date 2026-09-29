@@ -19,24 +19,24 @@ def emoji_por_status(status: str | None) -> str:
         return "⚪"
     s = str(status).strip().lower()
 
-    # 🔴 Vencida / Expirada
+    # 🔵 Vencida / Expirada
     if "vencid" in s or "expirad" in s:
-        return "🔴"
+        return "🔵"
 
     # 🟣 Reativar / Reativação
     if "reativ" in s:
         return "🟣"
 
-    # 🔵 Cancelada
+    # 🔴 Cancelada
     if "cancel" in s:
-        return "🔵"
+        return "🔴"
 
     # 🟢 Agendada
     if "agend" in s:
         return "🟢"
 
-    # 🟡 Em fila / Aguardando / Marcada
-    if "fila" in s or "aguard" in s or "marcad" in s:
+    # 🟡 Em fila / Aguardando / Informada (o FMS usa "Informada no portal" = em fila)
+    if "fila" in s or "aguard" in s or "marcad" in s or "informada" in s:
         return "🟡"
 
     return "⚪"
@@ -299,7 +299,7 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
         if update.callback_query:
             query = update.callback_query
             await query.answer()
-            num_reg = query.data.replace("ver_esp_", "").strip()
+            num_reg = query.data.replace("ver_esp_", "").replace("corr_reg_", "").strip()
             msg_alvo = query.message
         elif update.message:
             num_reg = update.message.text.strip()

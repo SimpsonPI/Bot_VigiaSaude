@@ -1067,9 +1067,9 @@ conv_consulta_especifica = ConversationHandler(
             processar_verificar_especifico, pattern="^ver_esp_"
         ),
     ],
-    states={
+                states={
         CONSULTAR_ID: [
-            CallbackQueryHandler(processar_verificar_especifico),
+            CallbackQueryHandler(processar_verificar_especifico, pattern="^ver_esp_"),
             MessageHandler(
                 filters.TEXT & ~filters.COMMAND, processar_verificar_especifico
             ),

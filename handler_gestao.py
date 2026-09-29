@@ -2,6 +2,7 @@ import logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 from database import supabase
+from utils import TECLADO_MENU
 from utils import (
     SELECIONAR_REGULACAO, SELECIONAR_CAMPO, AGUARDAR_NOVO_VALOR,
     SELECIONAR_REGULACAO_EXCLUIR, CONFIRMAR_EXCLUSAO, TECLADO_MENU
@@ -111,8 +112,9 @@ async def selecionar_regulacao_callback(update: Update, context: ContextTypes.DE
         context.user_data["edit_num_reg"] = num_reg
 
         teclado = [
+            [InlineKeyboardButton("🆔 ID da Regulação", callback_data="corr_campo_numero_reg")],
             [InlineKeyboardButton("👤 Nome do Paciente", callback_data="corr_campo_nome_paciente")],
-            [InlineKeyboardButton("🩺 Especialidade / Especialidade", callback_data="corr_campo_cbo")],
+            [InlineKeyboardButton("🩺 Especialidade / CBO", callback_data="corr_campo_cbo")],
             [InlineKeyboardButton("📱 Celular", callback_data="corr_campo_celular")],
             [InlineKeyboardButton("🩺 Procedimento", callback_data="corr_campo_procedimento")],
             [InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")]
@@ -141,6 +143,27 @@ async def selecionar_campo_callback(update: Update, context: ContextTypes.DEFAUL
         campo = data.replace("corr_campo_", "")
         context.user_data["edit_campo"] = campo
 
+        # ⚠️ Aviso especial quando o campo é o número da regulação
+        if campo in ("numero_reg", "numero_regulacao", "id_regulacao"):
+            await query.edit_message_text(
+                "⚠️ <b>ATENÇÃO — Verifique com muito cuidado!</b>\n\n"
+                "Antes de digitar o novo ID, confirme:\n"
+                "✅ O ID no seu <b>comprovante de agendamento</b>\n"
+                "✅ Se os <b>8 dígitos</b> conferem <b>exatamente</b>\n"
+                "✅ Se o número é da <b>sua</b> regulação\n\n"
+                "❌ <b>Se você digitar o ID errado, o bot pode mostrar "
+                "dados de outro paciente do SUS.</b>\n\n"
+                "📌 <i>Exemplo real:</i>\n"
+                "Cadastrar <code>12345678</code> em vez de <code>87654321</code> "
+                "pode trazer um agendamento <b>completamente diferente</b>.\n\n"
+                "💡 O ID correto tem <b>8 dígitos</b>. Em caso de dúvida, "
+                "procure o comprovante de agendamento ou a unidade básica de saúde.\n\n"
+                "<b>Digite o novo ID da regulação:</b>",
+                parse_mode="HTML"
+            )
+            return AGUARDAR_NOVO_VALOR
+
+        # Outros campos: mensagem padrão
         await query.edit_message_text(
             f"✍️ Digite o novo valor para o campo <b>{campo}</b>:",
             parse_mode="HTML"
@@ -153,14 +176,122 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     novo_valor = update.message.text.strip()
     num_reg = context.user_data.get("edit_num_reg")
     campo = context.user_data.get("edit_campo")
+    chat_id = str(update.effective_user.id)
 
+    # 1. Validação básica
+    if not novo_valor:
+        await update.message.reply_text(
+            "⚠️ Você não digitou nada. Tente novamente:",
+            reply_markup=TECLADO_MENU,
+        )
+        return ConversationHandler.END
+
+    # 2. Validações específicas por campo
+    if campo in ("numero_reg", "numero_regulacao", "id_regulacao"):
+        # Remove tudo que não é dígito
+        import re
+        novo_valor_limpo = re.sub(r"\D", "", novo_valor)
+
+        if len(novo_valor_limpo) != 8:
+            await update.message.reply_text(
+                f"⚠️ <b>O ID da regulação deve ter 8 dígitos.</b>\n\n"
+                f"Você digitou <b>{len(novo_valor_limpo)}</b> dígito(s).\n\n"
+                "📌 <i>Confira no seu comprovante de agendamento ou na "
+                "unidade básica de saúde.</i>\n\n"
+                "Tente novamente ou use /corrigir para recomeçar.",
+                parse_mode="HTML",
+                reply_markup=TECLADO_MENU,
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
+
+        novo_valor = novo_valor_limpo
+
+        # Verifica se o novo ID já existe para este usuário
+        try:
+            res_dup = supabase.table("AlertaSUS_2.0").select("id").eq(
+                "numero_reg", novo_valor
+            ).eq("chat_id", int(chat_id) if chat_id.isdigit() else chat_id).execute()
+
+            if res_dup.data:
+                await update.message.reply_text(
+                    f"⚠️ <b>Você já tem uma regulação com o ID {novo_valor}!</b>\n\n"
+                    "Se você realmente precisa trocar, apague primeiro a regulação "
+                    "duplicada com /excluir e cadastre novamente.\n\n"
+                    "A correção foi cancelada.",
+                    parse_mode="HTML",
+                    reply_markup=TECLADO_MENU,
+                )
+                context.user_data.clear()
+                return ConversationHandler.END
+        except Exception as e:
+            logger.error(f"Erro ao verificar duplicata: {e}")
+
+    elif campo == "celular":
+        # Valida tamanho mínimo de celular
+        import re
+        digitos = re.sub(r"\D", "", novo_valor)
+        if len(digitos) < 10:
+            await update.message.reply_text(
+                "⚠️ <b>Número de celular inválido.</b>\n\n"
+                "Digite com DDD (ex: 86999999999).",
+                parse_mode="HTML",
+                reply_markup=TECLADO_MENU,
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
+        novo_valor = digitos
+
+    # 3. Executa o UPDATE com filtro por chat_id (CRÍTICO)
     try:
-        supabase.table("AlertaSUS_2.0").update({campo: novo_valor}).eq("numero_reg", num_reg).execute()
-        # Exibe o espelho/resumo atualizado para confirmação do usuário
-        await mostrar_resumo_regulacao(update, context, num_reg)
+        query = supabase.table("AlertaSUS_2.0").update(
+            {campo: novo_valor}
+        ).eq("numero_reg", num_reg)
+
+        # Se o chat_id for numérico, compara como int
+        try:
+            query = query.eq("chat_id", int(chat_id))
+        except (ValueError, TypeError):
+            query = query.eq("chat_id", chat_id)
+
+        query.execute()
+
+        # Se o campo alterado foi o ID da regulação, reseta o status
+        if campo in ("numero_reg", "numero_regulacao", "id_regulacao"):
+            try:
+                query_reset = supabase.table("AlertaSUS_2.0").update(
+                    {"status_anterior": None}
+                ).eq("numero_reg", novo_valor)
+                try:
+                    query_reset = query_reset.eq("chat_id", int(chat_id))
+                except (ValueError, TypeError):
+                    query_reset = query_reset.eq("chat_id", chat_id)
+                query_reset.execute()
+                logger.info(f"Status resetado para nova regulação {novo_valor}")
+            except Exception as e:
+                logger.warning(f"Erro ao resetar status: {e}")
+
+            # Mostra mensagem especial informando que o ID mudou
+            await update.message.reply_text(
+                f"✅ <b>ID da regulação atualizado!</b>\n\n"
+                f"• <b>ID anterior:</b> <code>{num_reg}</code>\n"
+                f"• <b>Novo ID:</b> <code>{novo_valor}</code>\n\n"
+                "💡 <i>O status desta regulação será atualizado automaticamente "
+                "na próxima verificação (a cada 6 horas). Você também pode "
+                "forçar agora com /verificar_especifico.</i>",
+                parse_mode="HTML",
+                reply_markup=TECLADO_MENU,
+            )
+        else:
+            # Exibe o resumo normal para outros campos
+            await mostrar_resumo_regulacao(update, context, num_reg)
+
     except Exception as e:
         logger.error(f"Erro ao salvar alteração no Supabase: {e}")
-        await update.message.reply_text("❌ Erro ao atualizar o dado no banco de dados.", reply_markup=TECLADO_MENU)
+        await update.message.reply_text(
+            "❌ Erro ao atualizar o dado no banco de dados.",
+            reply_markup=TECLADO_MENU,
+        )
 
     context.user_data.clear()
     return ConversationHandler.END

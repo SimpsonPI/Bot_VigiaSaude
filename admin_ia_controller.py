@@ -178,13 +178,14 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not update.message or not update.message.text:
         return
 
-    # 🚩 Se o admin está dentro de um fluxo (mídia, enquete, etc.), NÃO processa aqui
+    print(f"🔵 DEBUG IA ADMIN: chamada. _em_fluxo_admin={context.user_data.get('_em_fluxo_admin')}", flush=True)
+
     if context.user_data.get("_em_fluxo_admin"):
+        print(f"🔵 DEBUG IA ADMIN: bloqueada (em fluxo)", flush=True)
         return
 
     user_message = update.message.text
     user_text_lower = user_message.lower()
-    # ... resto do código ...
 
     # 1. Saudação simples
     if any(saudacao in user_text_lower for saudacao in SAUDACOES):
