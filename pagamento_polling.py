@@ -122,6 +122,8 @@ def _calcular_dias_plano(tipo_plano: str) -> int:
 
 def _limite_por_plano(tipo_plano: str) -> int:
     p = str(tipo_plano).lower()
+    if "cortesia" in p:
+        return 999
     if "degustacao" in p:
         return 2
     if "trimestral" in p:
