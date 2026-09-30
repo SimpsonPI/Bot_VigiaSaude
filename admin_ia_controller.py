@@ -202,29 +202,45 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     # 2. Novidades (últimas 24h)
+        # 2. Se for pergunta sobre "novidades", consulta banco de dados
     if any(palavra in user_text_lower for palavra in PALAVRAS_NOVIDADES):
         try:
-            agora = datetime.utcnow()
+            from datetime import timezone
+            agora = datetime.now(timezone.utc)
             inicio = agora - timedelta(days=1)
-            novas_regulacoes = supabase.table("AlertaSUS_2.0").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count
-            novas_assinaturas = supabase.table("assinaturas").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count
-            novos_pagamentos = supabase.table("pagamentos_pix").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count
-            dados = (f"Nas últimas 24 horas: {novas_regulacoes} novas regulações, {novas_assinaturas} novas assinaturas, {novos_pagamentos} novos pagamentos.")
 
-            prompt = (
-                f"Você é o VS, assistente do {NOME_ADMIN}. "
-                f"O administrador pediu: '{user_message}'. "
-                f"Dados reais do banco: {dados}. "
-                "Responda de forma EXTREMAMENTE OBJETIVA. Apenas traga os números. "
-                "Não explique nada. Não use frases longas. Apenas os dados solicitados."
-            )
-            resposta_final = await chamar_groq(prompt, "Formate a resposta.")
+            novas_regulacoes = supabase.table("AlertaSUS_2.0").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count or 0
+            novas_assinaturas = supabase.table("assinaturas").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count or 0
+            novos_pagamentos = supabase.table("pagamentos_pix").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count or 0
+            novos_chamados = supabase.table("chamados_suporte").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count or 0
+
+            total = novas_regulacoes + novas_assinaturas + novos_pagamentos + novos_chamados
+
+            # Monta mensagem direta (sem IA) — evita resposta seca tipo "0"
+            if total == 0:
+                resposta_final = (
+                    "🗒️ <b>Nenhuma novidade nas últimas 24h.</b>\n\n"
+                    "Tudo tranquilo por aqui! Nenhuma nova regulação, "
+                    "assinatura, pagamento ou chamado."
+                )
+            else:
+                linhas = [f"📬 <b>Novidades das últimas 24h:</b>\n"]
+                if novas_regulacoes > 0:
+                    linhas.append(f"• 📋 <b>{novas_regulacoes}</b> nova(s) regulação(ões)")
+                if novas_assinaturas > 0:
+                    linhas.append(f"• 👥 <b>{novas_assinaturas}</b> nova(s) assinatura(s)")
+                if novos_pagamentos > 0:
+                    linhas.append(f"• 💳 <b>{novos_pagamentos}</b> novo(s) pagamento(s)")
+                if novos_chamados > 0:
+                    linhas.append(f"• 🎫 <b>{novos_chamados}</b> novo(s) chamado(s)")
+                resposta_final = "\n".join(linhas)
+
         except Exception as e:
             logger.error(f"Erro ao buscar novidades: {e}")
             resposta_final = "❌ Não consegui buscar as novidades."
 
         try:
-            await update.message.reply_text(resposta_final, parse_mode="Markdown")
+            await update.message.reply_text(resposta_final, parse_mode="HTML")
         except Exception:
             await update.message.reply_text(resposta_final, parse_mode=None)
         return

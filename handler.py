@@ -1053,6 +1053,16 @@ async def configurar_menu_comandos(app):
     ]
     await app.bot.set_my_commands(comandos)
 
+async def sair_consulta_por_texto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Sai do fluxo de consulta quando o usuário digita algo que não é número."""
+    await update.message.reply_text(
+        "❌ Você digitou algo que não é um número de regulação válido.\n\n"
+        "Saindo da consulta específica. Para tentar novamente, "
+        "use /verificar_especifico."
+    )
+    context.user_data.pop("_em_fluxo_admin", None)
+    context.user_data.clear()
+    return ConversationHandler.END
 
 # --- CONVERSATION HANDLERS ---
 conv_consulta_especifica = ConversationHandler(
@@ -1067,15 +1077,21 @@ conv_consulta_especifica = ConversationHandler(
             processar_verificar_especifico, pattern="^ver_esp_"
         ),
     ],
-                states={
+                    states={
         CONSULTAR_ID: [
             CallbackQueryHandler(processar_verificar_especifico, pattern="^ver_esp_"),
             MessageHandler(
-                filters.TEXT & ~filters.COMMAND, processar_verificar_especifico
+                filters.Regex(r"^\d{1,8}$"), processar_verificar_especifico
             ),
         ]
     },
-    fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+    fallbacks=[
+        CommandHandler("cancelar", cancelar_operacao),
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            sair_consulta_por_texto
+        ),
+    ],
     per_message=False,
 )
 
