@@ -203,15 +203,34 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     nome = user.first_name or "Usuário"
 
     mensagem = (
-        f"👋 Olá, <b>{nome}</b>! Bem-vindo (a) ao <b>VigiaSaude</b>.\n\n"
+        f"👋 Olá, <b>{nome}</b>! Bem-vindo ao <b>VigiaSaude</b>.\n\n"
         f"🆔 <b>Seu ID do Telegram:</b> <code>{user.id}</code>\n\n"
         "Acesse todas as opções e comandos diretamente pelo menu nativo do Telegram "
         "(botão <b>[/]</b> ao lado da barra de digitação)."
     )
 
-    await update.message.reply_text(
-        mensagem, reply_markup=obter_menu_principal(), parse_mode="HTML"
-    )
+    # Se veio de clique em botão (callback_query)
+    if update.callback_query:
+        try:
+            await update.callback_query.answer()
+            await update.callback_query.edit_message_text(
+                mensagem, parse_mode="HTML", reply_markup=obter_menu_principal()
+            )
+        except Exception:
+            # Se não conseguir editar (mensagem antiga), envia nova
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=mensagem,
+                parse_mode="HTML",
+                reply_markup=obter_menu_principal(),
+            )
+    # Se veio de comando /start ou /iniciar
+    elif update.message:
+        await update.message.reply_text(
+            mensagem,
+            reply_markup=obter_menu_principal(),
+            parse_mode="HTML",
+        )
 
 
 # --- TECLADO E LÓGICA COMERCIAL DE PLANOS ---

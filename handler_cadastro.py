@@ -311,18 +311,41 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     except Exception as e:
         logger.error(f"Erro ao verificar duplicata no cadastro: {e}")
 
+    # ✅ Salva o número da regulação
     context.user_data["numero_regulacao"] = num_reg
+
+    # ✅ FORA DO TRY/EXCEPT — sempre pede a especialidade no fluxo normal
     await update.message.reply_text(
-        "Informe o código <b>Especialidade</b> (opcional — digite 0 para pular):",
+        "Agora informe a <b>Especialidade</b> da consulta/exame\n"
+        "<i>(ex: ULTRASSONOGRAFIA, CARDIOLOGIA, OFTALMOLOGIA)</i>\n\n"
+        "Se não souber, digite <code>0</code> para pular.",
         parse_mode="HTML",
     )
     return ETAPA_CBO
 
 async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
-    cbo = update.message.text.strip()
-    context.user_data["cbo"] = cbo if cbo != "0" else ""
-    await update.message.reply_text("Qual a descrição do <b>Procedimento/Exame</b>?", parse_mode="HTML")
+    
+    valor = update.message.text.strip()
+    
+    if valor == "0":
+        context.user_data["cbo"] = ""
+        await update.message.reply_text(
+            "⏭️ <b>Especialidade pulada.</b>\n\n"
+            "Agora informe a <b>descrição do Procedimento/Exame</b>:\n"
+            "<i>(ex: ULTRASSONOGRAFIA, CONSULTA CARDIOLOGIA)</i>",
+            parse_mode="HTML",
+        )
+        return ETAPA_PROCEDIMENTO
+    
+    context.user_data["cbo"] = formatar_maiusculo(valor)
+    
+    await update.message.reply_text(
+        f"✅ <b>Especialidade registrada:</b> {formatar_maiusculo(valor)}\n\n"
+        "Agora informe a <b>descrição do Procedimento/Exame</b>:\n"
+        "<i>(ex: ULTRASSONOGRAFIA, CONSULTA CARDIOLOGIA)</i>",
+        parse_mode="HTML",
+    )
     return ETAPA_PROCEDIMENTO
 
 async def receber_procedimento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
