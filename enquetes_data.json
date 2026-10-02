@@ -1,5 +1,5 @@
 {
-  "proximo_id": 8,
+  "proximo_id": 10,
   "enquetes": {
     "2": {
       "id": 2,
@@ -100,6 +100,33 @@
         }
       },
       "fecha_em": "2026-09-20T15:33:49.444489+00:00",
+      "mensagens": {}
+    },
+    "9": {
+      "id": 9,
+      "pergunta": "Qual sua principal dificuldade no VigiaSaúde?",
+      "opcoes": [
+        "Cadastrar",
+        "Corrigir",
+        "Excluir",
+        "Informações do bot"
+      ],
+      "criador_id": "5242040324",
+      "criada_em": "2026-10-01T15:35:20.033628+00:00",
+      "ativa": false,
+      "votos": {
+        "5444152614": {
+          "nome": "Maria Antônia",
+          "opcao_idx": 0,
+          "votado_em": "2026-10-01T15:35:28.432702+00:00"
+        },
+        "5242040324": {
+          "nome": "Lincoln Simpson",
+          "opcao_idx": 2,
+          "votado_em": "2026-10-01T15:35:44.518040+00:00"
+        }
+      },
+      "fecha_em": "2026-10-01T15:40:20.045715+00:00",
       "mensagens": {}
     }
   }
