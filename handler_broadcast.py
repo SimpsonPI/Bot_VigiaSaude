@@ -117,6 +117,18 @@ def _teclado_segmentos() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(botoes)
 
+async def _buscar_nome_usuario(context, chat_id: str) -> str:
+    """Busca o primeiro nome real do usuário no Telegram.
+    Fallback: string vazia se não conseguir.
+    """
+    try:
+        chat = await context.bot.get_chat(chat_id=chat_id)
+        nome = (chat.first_name or "").strip()
+        if nome:
+            return nome
+    except Exception as e:
+        logger.warning(f"Não consegui pegar nome do chat {chat_id}: {e}")
+    return ""
 
 # ==========================================
 # COMANDO /broadcast
@@ -128,10 +140,11 @@ async def comando_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await update.message.reply_text("⛔ Acesso restrito a administradores.")
         return ConversationHandler.END
 
-    # Limpa estado antigo
+        # Limpa estado antigo
     context.user_data.pop("bc_segmento", None)
     context.user_data.pop("bc_conteudo", None)
     context.user_data.pop("bc_tipo", None)
+    context.user_data["bc_saudacao"] = True   # ← NOVO: saudação ativa por padrão
 
     texto = (
         "📢 <b>BROADCAST — Envio em Massa</b>\n\n"
@@ -188,6 +201,10 @@ async def broadcast_escolher_segmento(update: Update, context: ContextTypes.DEFA
         "• 📝 Texto simples\n"
         "• 📷 Foto (com ou sem legenda)\n"
         "• 🎬 Vídeo (com ou sem legenda)\n\n"
+        "💡 <b>Personalização:</b>\n"
+        "Use <code>{nome}</code> onde quiser o nome do destinatário.\n\n"
+        "<i>Exemplo:</i>\n"
+        "<code>Olá, {nome}! Temos uma novidade...</code>\n\n"
         "Use /cancelar para desistir."
     )
 
@@ -250,26 +267,43 @@ async def broadcast_receber_conteudo(update: Update, context: ContextTypes.DEFAU
 
     preview = preview_texto[:300] if len(preview_texto) > 300 else preview_texto
 
+    # Busca nome do admin como exemplo
+    exemplo_nome = "Você"
+    try:
+        chat = await context.bot.get_chat(chat_id=str(update.effective_user.id))
+        if chat.first_name:
+            exemplo_nome = chat.first_name
+    except Exception:
+        pass
+
+    saudacao_ativa = context.user_data.get("bc_saudacao", True)
+    exemplo_saudacao = _montar_saudacao(exemplo_nome, saudacao_ativa)
+
+    status_saudacao = "✅ <b>ATIVADA</b>" if saudacao_ativa else "❌ <b>DESATIVADA</b>"
+
     texto = (
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "📋 <b>PRÉVIA DO BROADCAST</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"📌 <b>Segmento:</b> {info.get('nome', '?')}\n"
         f"👥 <b>Destinatários:</b> {total} usuário(s)\n"
-        f"📎 <b>Tipo:</b> {tipo_previa}\n\n"
-        "💬 <b>Conteúdo:</b>\n"
-        f"<code>{preview}</code>\n\n"
+        f"📎 <b>Tipo:</b> {tipo_previa}\n"
+        f"👋 <b>Saudação automática:</b> {status_saudacao}\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "📝 <b>COMO O USUÁRIO VAI VER:</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"<i>{CABECALHO.strip()}</i>\n\n"
+        f"<b>{exemplo_saudacao.strip()}</b>\n\n"
         f"<code>{preview[:200]}</code>\n\n"
         f"<i>{RODAPE.strip()}</i>\n\n"
         "━━━━━━━━━━━━━━━━━━━━━"
     )
 
+    label_saudacao = "👋 Desativar saudação" if saudacao_ativa else "👋 Ativar saudação"
+
     teclado = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ ENVIAR AGORA", callback_data="bc_conf_enviar")],
+        [InlineKeyboardButton(label_saudacao, callback_data="bc_toggle_saudacao")],
         [InlineKeyboardButton("✏️ Trocar conteúdo", callback_data="bc_conf_trocar")],
         [InlineKeyboardButton("❌ Cancelar", callback_data="bc_cancelar")],
     ])
@@ -277,7 +311,18 @@ async def broadcast_receber_conteudo(update: Update, context: ContextTypes.DEFAU
     await msg.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
     return BROADCAST_CONFIRMAR_ENVIO
 
-
+    if data == "bc_toggle_saudacao":
+        # Inverte o valor
+        atual = context.user_data.get("bc_saudacao", True)
+        context.user_data["bc_saudacao"] = not atual
+        # Volta para a prévia (reprocessa)
+        novo_estado = "ATIVADA" if not atual else "DESATIVADA"
+        await query.edit_message_text(
+            f"👋 Saudação automática <b>{novo_estado}</b>.\n\n"
+            "Envie qualquer coisa para gerar nova prévia.",
+        )
+        return BROADCAST_ENVIAR_CONTEUDO
+    
 # ==========================================
 # CONFIRMAÇÃO E ENVIO
 # ==========================================
@@ -328,20 +373,26 @@ async def broadcast_confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     for cid in chat_ids:
         try:
+            # 🔍 Busca o nome real do Telegram
+            nome = await _buscar_nome_usuario(context, cid)
+
+            # 👋 Monta a saudação (ativa ou não)
+            saudacao_ativa = context.user_data.get("bc_saudacao", True)
+            saudacao = _montar_saudacao(nome, saudacao_ativa)
+
             if tipo == "text":
-                # Texto puro → cabeçalho + conteúdo + rodapé
-                texto_final = CABECALHO + conteudo.get("text", "") + RODAPE
+                texto_original = conteudo.get("text", "")
+                texto_final = CABECALHO + saudacao + texto_original + RODAPE
+
                 await context.bot.send_message(
                     chat_id=cid,
                     text=texto_final,
                     parse_mode="HTML",
                 )
             elif tipo == "photo":
-                # Foto → cabeçalho + legenda + rodapé
                 caption_original = conteudo.get("caption") or ""
-                caption_final = CABECALHO + caption_original + RODAPE
+                caption_final = CABECALHO + saudacao + caption_original + RODAPE
 
-                # Telegram limita legendas a 1024 chars
                 if len(caption_final) > 1000:
                     caption_final = caption_final[:990] + "\n[...]"
 
@@ -352,9 +403,8 @@ async def broadcast_confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE
                     parse_mode="HTML",
                 )
             elif tipo == "video":
-                # Vídeo → cabeçalho + legenda + rodapé
                 caption_original = conteudo.get("caption") or ""
-                caption_final = CABECALHO + caption_original + RODAPE
+                caption_final = CABECALHO + saudacao + caption_original + RODAPE
 
                 if len(caption_final) > 1000:
                     caption_final = caption_final[:990] + "\n[...]"
@@ -416,6 +466,13 @@ async def broadcast_confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data.clear()
     return ConversationHandler.END
 
+def _montar_saudacao(nome: str, ativa: bool = True) -> str:
+    """Monta a saudação automática. Se ativa=False, retorna vazio."""
+    if not ativa:
+        return ""
+    if nome:
+        return f"Olá, {nome}! 👋\n\n"
+    return "Olá! 👋\n\n"
 
 # ==========================================
 # CANCELAR
