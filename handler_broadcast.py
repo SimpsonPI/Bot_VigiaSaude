@@ -17,6 +17,16 @@ logger = logging.getLogger(__name__)
 # Guarda o ID do admin que iniciou o broadcast (para confirmar antes de enviar)
 ADMIN_ID = 5242040324  # ← ajuste se necessário
 
+# ═══════════════════════════════════════════════
+# BRANDING — Assinatura padrão dos broadcasts
+# ═══════════════════════════════════════════════
+CABECALHO = "📢 <b>VIGIASAÚDE — COMUNICADO OFICIAL</b>\n\n"
+
+RODAPE = (
+    "\n\n━━━━━━━━━━━━━━━━━━━━━\n"
+    "🏥 <i>Ferramenta independente de monitoramento</i>\n"
+    "🤖 Saiba mais: <b>@vigiasaude_bot</b>"
+)
 
 # ==========================================
 # SEGMENTOS DISPONÍVEIS
@@ -238,7 +248,7 @@ async def broadcast_receber_conteudo(update: Update, context: ContextTypes.DEFAU
     info = SEGMENTOS.get(segmento, {})
     total = context.user_data.get("bc_total", 0)
 
-    preview = preview_texto[:500] if len(preview_texto) > 500 else preview_texto
+    preview = preview_texto[:300] if len(preview_texto) > 300 else preview_texto
 
     texto = (
         "━━━━━━━━━━━━━━━━━━━━━\n"
@@ -249,6 +259,12 @@ async def broadcast_receber_conteudo(update: Update, context: ContextTypes.DEFAU
         f"📎 <b>Tipo:</b> {tipo_previa}\n\n"
         "💬 <b>Conteúdo:</b>\n"
         f"<code>{preview}</code>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "📝 <b>COMO O USUÁRIO VAI VER:</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"<i>{CABECALHO.strip()}</i>\n\n"
+        f"<code>{preview[:200]}</code>\n\n"
+        f"<i>{RODAPE.strip()}</i>\n\n"
         "━━━━━━━━━━━━━━━━━━━━━"
     )
 
@@ -313,28 +329,45 @@ async def broadcast_confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE
     for cid in chat_ids:
         try:
             if tipo == "text":
+                # Texto puro → cabeçalho + conteúdo + rodapé
+                texto_final = CABECALHO + conteudo.get("text", "") + RODAPE
                 await context.bot.send_message(
                     chat_id=cid,
-                    text=conteudo.get("text", ""),
+                    text=texto_final,
                     parse_mode="HTML",
                 )
             elif tipo == "photo":
+                # Foto → cabeçalho + legenda + rodapé
+                caption_original = conteudo.get("caption") or ""
+                caption_final = CABECALHO + caption_original + RODAPE
+
+                # Telegram limita legendas a 1024 chars
+                if len(caption_final) > 1000:
+                    caption_final = caption_final[:990] + "\n[...]"
+
                 await context.bot.send_photo(
                     chat_id=cid,
                     photo=conteudo.get("file_id"),
-                    caption=conteudo.get("caption") or None,
-                    parse_mode="HTML" if conteudo.get("caption") else None,
+                    caption=caption_final,
+                    parse_mode="HTML",
                 )
             elif tipo == "video":
+                # Vídeo → cabeçalho + legenda + rodapé
+                caption_original = conteudo.get("caption") or ""
+                caption_final = CABECALHO + caption_original + RODAPE
+
+                if len(caption_final) > 1000:
+                    caption_final = caption_final[:990] + "\n[...]"
+
                 await context.bot.send_video(
                     chat_id=cid,
                     video=conteudo.get("file_id"),
-                    caption=conteudo.get("caption") or None,
-                    parse_mode="HTML" if conteudo.get("caption") else None,
+                    caption=caption_final,
+                    parse_mode="HTML",
                 )
 
             enviados += 1
-            await asyncio.sleep(0.3)  # evita flood
+            await asyncio.sleep(0.3)
 
         except Exception as e:
             falhas += 1
