@@ -1,4 +1,6 @@
 from dotenv import load_dotenv
+from handler_broadcast import conv_broadcast
+from admin_panel import comando_painel, callback_painel
 load_dotenv()
 
 from handler_consultas import (
@@ -277,7 +279,7 @@ def main():
     app.add_handler(conv_excluir)
     app.add_handler(conv_envio_midia)
     app.add_handler(conv_criar_enquete)
-
+    app.add_handler(conv_broadcast)
     # Comandos públicos
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("iniciar", start))
@@ -292,8 +294,11 @@ def main():
     app.add_handler(CommandHandler("suporte", menu_suporte))
 
     # Comandos admin
-    app.add_handler(CommandHandler("admin", comando_menu_admin))
-    app.add_handler(CommandHandler("menu_admin", comando_menu_admin))
+        # Painel admin interativo
+    app.add_handler(CommandHandler("painel", comando_painel))
+    app.add_handler(CommandHandler("admin", comando_painel))
+    app.add_handler(CommandHandler("menu_admin", comando_painel))
+    app.add_handler(CallbackQueryHandler(callback_painel, pattern="^painel_"))
     app.add_handler(CommandHandler("estatisticas", comando_estatisticas))
     app.add_handler(CommandHandler("ativos", comando_listar_ativos))
     app.add_handler(CommandHandler("detalhes", comando_detalhes))

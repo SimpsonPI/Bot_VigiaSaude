@@ -456,31 +456,6 @@ async def comando_aviso(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def comando_menu_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Exibe o painel de controle administrativo."""
-    if not eh_admin(update.effective_user.id):
-        await update.message.reply_text("❌ Você não tem permissão para usar este comando.")
-        return
-
-    texto = (
-        "🎛️ <b>PAINEL DE CONTROLE ADMINISTRATIVO</b>\n"
-        "VigiaSaude - Central de Operações\n\n"
-        "Selecione ou utilize um dos comandos abaixo para gerenciar o bot:\n\n"
-        "📊 <b>Relatórios e Dados:</b>\n"
-        "• /estatisticas - Visão geral de usuários, planos e cadastros\n"
-        "• /ativos - Lista as últimas assinaturas ativas\n"
-        "• /detalhes &lt;ID&gt; - Mostra dados completos de um usuário\n\n"
-        "👑 <b>Gestão de Planos e Acessos:</b>\n"
-        "• /cortesia &lt;ID&gt; - Concede acesso ilimitado/VIP\n"
-        "• /remover_cortesia &lt;ID&gt; - Retira cortesia e deixa neutro\n"
-        "• /dar_plano &lt;ID&gt; &lt;plano&gt; &lt;dias&gt; - Concede plano com validade\n"
-        "• /retirar_plano &lt;ID&gt; - Retira plano pago e deixa neutro\n"
-        "• /retirar_degustacao &lt;ID&gt; - Retira acesso à degustação\n\n"
-        "🛡️ <b>Segurança e Comunicação:</b>\n"
-        "• /bloquear &lt;ID&gt; - Bloqueia o acesso de um usuário\n"
-        "• /aviso &lt;mensagem&gt; - Dispara broadcast para toda a base\n\n"
-        "💡 <i>Dica: Pode digitar o comando diretamente na barra de mensagens.</i>"
-        "• /aviso &lt;mensagem&gt; - Dispara broadcast para toda a base\n"
-        "• /enviar_midia - Enviar imagem/documento (individual ou broadcast)\n\n"
-        "• /enviar_enquete - Criar e enviar enquete (individual ou broadcast)\n\n"
-    )
-    await update.message.reply_text(texto, parse_mode="HTML")
+    """Redireciona para o painel interativo."""
+    from admin_panel import comando_painel
+    await comando_painel(update, context)
