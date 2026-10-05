@@ -22,6 +22,8 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 import os
 import json
 import asyncio
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from telegram import BotCommand, BotCommandScopeAllPrivateChats, Update
 from telegram.ext import (
@@ -358,6 +360,33 @@ def main():
     app.add_handler(CallbackQueryHandler(
         processar_verificar_especifico, pattern="^ver_esp_"
     ))
+
+        # ─── Servidor HTTP auxiliar (Render / Railway) ───
+    PORT = int(os.environ.get("PORT", "8080"))
+
+    class HealthHandler(BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            pass  # silencia logs
+
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"VigiaSaude is running!")
+
+        def do_HEAD(self):
+            self.send_response(200)
+            self.end_headers()
+
+    def run_http_server(port):
+        try:
+            server = HTTPServer(("0.0.0.0", port), HealthHandler)
+            logger.info(f"✅ Servidor HTTP auxiliar rodando na porta {port}")
+            server.serve_forever()
+        except Exception as e:
+            logger.error(f"Erro no servidor HTTP: {e}")
+
+    threading.Thread(target=run_http_server, args=(PORT,), daemon=True).start()
 
     logger.info("Iniciando o bot VigiaSaude via polling...")
     app.run_polling(drop_pending_updates=True)
