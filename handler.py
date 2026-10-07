@@ -1298,7 +1298,7 @@ async def faq_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = (
         "📌 <b>Como cadastrar uma nova regulação?</b>\n\n"
         "• Utilize o comando <b>/cadastrar_nova</b> no menu do bot.\n"
-        "• Digite o número do seu <b>Cartão SUS</b> (15 dígitos) ou o <b>ID da Regulação</b>.\n"
+        "• Digite o número do seu <b>Cartão SUS</b> (15 dígitos) e o <b>ID da Regulação</b>.\n"
         "• Siga as instruções na tela até a confirmação do cadastro."
     )
     teclado = InlineKeyboardMarkup(
