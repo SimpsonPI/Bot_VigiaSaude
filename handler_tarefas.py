@@ -168,6 +168,6 @@ async def limpar_pagamentos_pendentes():
         limite = datetime.now(timezone.utc) - timedelta(hours=24)
 
         supabase.table("pagamentos_pix").delete().eq("status", "pending").lt("created_at", limite.isoformat()).execute()
-        print("✅ Pagamentos pendentes com mais de 24h foram limpos.")
+        logger.info("Pagamentos pendentes com mais de 24h foram limpos.")
     except Exception as e:
-        print(f"❌ Erro ao limpar pagamentos: {e}")
+        logger.error(f"Erro ao limpar pagamentos: {e}")
