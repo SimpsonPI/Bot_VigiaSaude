@@ -1,3 +1,4 @@
+# handler_consultas.py
 import logging
 import re
 from html import escape
@@ -13,33 +14,30 @@ CONSULTAR_ID = 1
 
 DISCLAIMER_TEXTO = "Serviço independente de monitoramento. Não possuímos vínculo oficial com a FMS ou Prefeitura de Teresina."
 
+
+# ═══════════════════════════════════════════════
+# FUNÇÕES AUXILIARES
+# ═══════════════════════════════════════════════
+
 def emoji_por_status(status: str | None) -> str:
     """Retorna o emoji correspondente ao status da regulação."""
     if not status:
         return "⚪"
     s = str(status).strip().lower()
 
-    # 🔵 Vencida / Expirada
     if "vencid" in s or "expirad" in s:
         return "🔵"
-
-    # 🟣 Reativar / Reativação
     if "reativ" in s:
         return "🟣"
-
-    # 🔴 Cancelada
     if "cancel" in s:
         return "🔴"
-
-    # 🟢 Agendada
     if "agend" in s:
         return "🟢"
-
-    # 🟡 Em fila / Aguardando / Informada (o FMS usa "Informada no portal" = em fila)
     if "fila" in s or "aguard" in s or "marcad" in s or "informada" in s:
         return "🟡"
 
     return "⚪"
+
 
 def _mascarar_nome_custom(nome: str) -> str:
     """Retorna: Primeiro nome + iniciais. Ex: 'João Silva Santos' -> 'João S. S.'"""
@@ -48,17 +46,19 @@ def _mascarar_nome_custom(nome: str) -> str:
     partes = nome.strip().split()
     if len(partes) <= 1:
         return partes[0].capitalize()
-    
+
     primeiro = partes[0].capitalize()
     iniciais = [f"{p[0].upper()}." for p in partes[1:]]
     return f"{primeiro} {' '.join(iniciais)}"
 
+
 def _mascarar_sus_custom(sus: str) -> str:
-    """Retorna: 3 primeiros + 3 últimos. Ex: '12345678912' -> '123*****912'"""
+    """Retorna: 3 primeiros + 3 últimos."""
     s = str(sus).strip()
     if len(s) < 6:
         return s
     return f"{s[:3]}{'*' * 5}{s[-3:]}"
+
 
 def _montar_msg_html(num_reg: str, resultado: dict, reg_db=None, titulo: str = "📋 <b>STATUS DA REGULAÇÃO</b>") -> str:
     cartao_sus_raw = ""
@@ -66,12 +66,11 @@ def _montar_msg_html(num_reg: str, resultado: dict, reg_db=None, titulo: str = "
     cbo = "Não informado"
     procedimento = "Não informado"
 
-    if reg_db:
-        if isinstance(reg_db, dict):
-            cartao_sus_raw = reg_db.get("numero_sus") or reg_db.get("cartao_sus") or ""
-            nome_paciente_raw = reg_db.get("nome_paciente") or ""
-            cbo = reg_db.get("cbo") or cbo
-            procedimento = reg_db.get("procedimento") or procedimento
+    if reg_db and isinstance(reg_db, dict):
+        cartao_sus_raw = reg_db.get("numero_sus") or reg_db.get("cartao_sus") or ""
+        nome_paciente_raw = reg_db.get("nome_paciente") or ""
+        cbo = reg_db.get("cbo") or cbo
+        procedimento = reg_db.get("procedimento") or procedimento
 
     nome_exibicao = _mascarar_nome_custom(nome_paciente_raw)
     cartao_sus_exibicao = _mascarar_sus_custom(cartao_sus_raw) if cartao_sus_raw else "Não informado"
@@ -127,13 +126,14 @@ def _montar_msg_html(num_reg: str, resultado: dict, reg_db=None, titulo: str = "
         linhas.append(f"<b>Previsão:</b> {escape(str(previsao))}")
         if alerta and str(alerta).strip():
             linhas.append("")
-            linhas.append(f"⚠️ <b>Mensagem do Portal:</b>\n<i>{escape(str(alerta.strip()))}</i>")
+            linhas.append(f"⚠️ <b>Mensagem do Portal:</b>\n<i>{escape(str(alerta).strip())}</i>")
 
     if DISCLAIMER_TEXTO:
         linhas.append("")
         linhas.append(f"ℹ️ <i>{DISCLAIMER_TEXTO.strip()}</i>")
 
     return "\n".join(linhas)
+
 
 async def enviar_resposta(update: Update, texto: str, parse_mode="HTML", reply_markup=None):
     if update.callback_query:
@@ -144,6 +144,11 @@ async def enviar_resposta(update: Update, texto: str, parse_mode="HTML", reply_m
     elif update.message:
         await update.message.reply_text(texto, parse_mode=parse_mode, reply_markup=reply_markup)
 
+
+# ═══════════════════════════════════════════════
+# COMANDO: VERIFICAR TODAS
+# ═══════════════════════════════════════════════
+
 async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 🔒 Bloqueio de plano expirado
     from handler import verificar_plano_ativo, enviar_alerta_plano_expirado
@@ -153,9 +158,33 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
         await enviar_alerta_plano_expirado(update, context)
         return
 
-    # ... resto do código existente
-    user_id = update.effective_user.id
-    
+    # 🆕 LIMITE DIÁRIO + INTERVALO
+    from verificacao_limite import pode_verificar, registrar_verificacao
+    chat_id = str(user_id)
+    pode, motivo, restantes = pode_verificar(chat_id, "todas")
+
+    if not pode:
+        if motivo.startswith("intervalo:"):
+            segundos = int(motivo.split(":")[1])
+            await update.message.reply_text(
+                f"⏳ <b>Aguarde um pouco!</b>\n\n"
+                f"Você fez uma verificação há pouco tempo. "
+                f"Tente novamente em <b>{segundos} segundos</b>.",
+                parse_mode="HTML"
+            )
+        else:
+            await update.message.reply_text(
+                "⏳ <b>Limite diário de verificações completas atingido!</b>\n\n"
+                "Você já usou suas <b>2 verificações completas</b> de hoje.\n\n"
+                "💡 <i>Alternativas:</i>\n"
+                "• Use <b>/verificar_especifico</b> para checar 1 regulação\n"
+                "• O bot continua monitorando automaticamente a cada 6h 🕐\n"
+                "• Volte amanhã para mais 2 verificações completas",
+                parse_mode="HTML"
+            )
+        return
+
+    # ✅ Busca as regulações do usuário
     try:
         res = supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", user_id).execute()
         regulacoes = res.data if res.data else []
@@ -164,10 +193,19 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
         regulacoes = []
 
     if not regulacoes:
-        await enviar_resposta(update, "ℹ️ <b>Você não possui nenhuma regulação cadastrada.</b>\nUtilize o menu para cadastrar.", parse_mode="HTML")
+        await update.message.reply_text(
+            "ℹ️ <b>Você não possui nenhuma regulação cadastrada.</b>\n"
+            "Use o menu para cadastrar.",
+            parse_mode="HTML"
+        )
         return
 
-    # Envia uma mensagem inicial de carregamento
+    # Marca como usada
+    registrar_verificacao(chat_id, "todas")
+    # Define o alvo (message ou callback)
+    msg_alvo = update.message if update.message else update.callback_query.message
+    
+    # Envia mensagem de carregamento
     total_regs = len(regulacoes)
     msg_carregando = f"🔄 Consultando <b>{total_regs}</b> regulação(ões) na FMS... Por favor, aguarde."
     if update.callback_query:
@@ -195,17 +233,30 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
         relatorios.append(msg_html)
 
     if relatorios:
-        # Junta todas as regulações em uma única mensagem separada por divisores
         mensagem_final = "\n\n➖➖➖➖➖➖➖➖➖➖\n\n".join(relatorios)
         if len(mensagem_final) <= 4096:
             await enviar_resposta(update, mensagem_final, parse_mode="HTML")
         else:
             for relatorio in relatorios:
                 await enviar_resposta(update, relatorio, parse_mode="HTML")
-                
-        await enviar_resposta(update, "✅ Consulta concluída!")
+
+        # Contador de restantes
+                # Contador final (usa o valor já calculado no início, sem re-consultar)
+        restantes_agora = max(0, restantes - 1)
+        await msg_alvo.reply_text(
+            f"<i>📊 Verificações completas restantes hoje: <b>{restantes_agora}/2</b></i>",
+            parse_mode="HTML"
+        )
     else:
-        await enviar_resposta(update, "⚠️ Não foi possível recuperar os dados no momento. Tente novamente mais tarde.")
+        await enviar_resposta(
+            update,
+            "⚠️ Não foi possível recuperar os dados no momento. Tente novamente mais tarde."
+        )
+
+
+# ═══════════════════════════════════════════════
+# COMANDO: VERIFICAR ESPECÍFICO
+# ═══════════════════════════════════════════════
 
 async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # 🔒 Bloqueio de plano expirado
@@ -216,11 +267,10 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
         await enviar_alerta_plano_expirado(update, context)
         return ConversationHandler.END
 
-    # ... resto do código existente
     try:
         user_id = update.effective_user.id
-        
-        # 1. Envia a mensagem de carregamento imediatamente
+
+        # 1. Mensagem de carregamento
         msg_carregando = None
         if update.message:
             msg_carregando = await update.message.reply_text("⏳ Consultando suas regulações, aguarde...")
@@ -228,7 +278,7 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
             await update.callback_query.answer("Carregando...")
             msg_carregando = await update.callback_query.message.reply_text("⏳ Consultando suas regulações, aguarde...")
 
-        # 2. Faz a consulta no Supabase
+        # 2. Consulta no Supabase
         res = supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", user_id).execute()
         regulacoes = res.data if res.data else []
 
@@ -242,6 +292,7 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
                 )
             return ConversationHandler.END
 
+        # 3. Monta botões
         teclado_botoes = []
         for reg in regulacoes:
             num_reg = reg.get("numero_reg")
@@ -258,16 +309,30 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
         teclado_botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_ver_esp")])
         reply_markup = InlineKeyboardMarkup(teclado_botoes)
 
+                # 4. Contador de restantes (usa função que ignora intervalo)
+        from verificacao_limite import restantes_reais
+        restantes_esp = restantes_reais(str(user_id), "especifico")
+
+        # 5. Menu com legenda colorida
         msg = (
             "🔍 <b>Selecione qual regulação deseja verificar:</b>\n"
-            "<i>Ou se preferir, digite o número do ID da regulação abaixo:</i>\n\n"
-            "<b>Legenda:</b>\n"
-            "<code>🟢 Agendada      🔵 Vencida\n"
-            "🟡 Em fila       🔴 Cancelada\n"
-            "🟣 Reativar      ⚪ Sem status</code>"
+            "<i>Ou digite o ID abaixo:</i>\n\n"
+
+            "🎨 <b>ENTENDA AS CORES:</b>\n"
+            "🟢 <b>Agendada</b> — Consulta marcada! Confirme no posto.\n"
+            "🟡 <b>Em fila</b> — Aguardando. Continue monitorando.\n"
+            "🔵 <b>Vencida</b> — Renove no posto o quanto antes!\n"
+            "🔴 <b>Cancelada</b> — Precisa de atenção imediata.\n"
+            "🟣 <b>Reativar</b> — Voltou a valer. Acompanhe.\n"
+            "⚪ <b>Sem status</b> — Ainda não localizada.\n\n"
+
+            "💡 <i>Fique de olho nas 🟡 <b>Em fila</b> — são as que mais mudam de status!</i>\n\n"
+
+            f"📊 <b>Verificações específicas hoje:</b> {restantes_esp}/5\n"
+            f"<i>O bot também monitora automaticamente a cada 6h 🕐</i>"
         )
-        
-        # 3. Substitui a mensagem de carregamento pelo menu final com os botões
+
+        # 6. Substitui o carregamento pelo menu final
         if msg_carregando:
             await context.bot.edit_message_text(
                 chat_id=update.effective_chat.id,
@@ -278,13 +343,13 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
             )
         context.user_data["_em_fluxo_admin"] = "verificar"
         return CONSULTAR_ID
+
     except Exception as e:
         logger.error(f"Erro em iniciar_verificar_especifico: {e}")
         context.user_data.pop("_em_fluxo_admin", None)
         return ConversationHandler.END
 
 
-# Adicione também esta função para processar o clique/digitação da consulta específica com a mensagem de carregamento:
 async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Processa o clique/digitação da consulta específica."""
     try:
@@ -296,6 +361,7 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
             await enviar_alerta_plano_expirado(update, context)
             return ConversationHandler.END
 
+        # Identifica o número da regulação (callback ou texto)
         if update.callback_query:
             query = update.callback_query
             await query.answer()
@@ -308,6 +374,32 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
             context.user_data.pop("_em_fluxo_admin", None)
             return ConversationHandler.END
 
+        # 🆕 LIMITE DIÁRIO + INTERVALO
+        from verificacao_limite import pode_verificar, registrar_verificacao
+        chat_id = str(user_id)
+        pode, motivo, restantes = pode_verificar(chat_id, "especifico")
+
+        if not pode:
+            if motivo.startswith("intervalo:"):
+                segundos = int(motivo.split(":")[1])
+                await msg_alvo.reply_text(
+                    f"⏳ <b>Aguarde {segundos} segundos</b> para fazer outra verificação.",
+                    parse_mode="HTML"
+                )
+            else:
+                await msg_alvo.reply_text(
+                    "⏳ <b>Limite diário de verificações específicas atingido!</b>\n\n"
+                    "Você já usou suas <b>5 verificações específicas</b> de hoje.\n\n"
+                    "💡 <i>Aguarde até meia-noite para novas verificações.</i>",
+                    parse_mode="HTML"
+                )
+            context.user_data.pop("_em_fluxo_admin", None)
+            return ConversationHandler.END
+
+        # Marca como usada
+        registrar_verificacao(chat_id, "especifico")
+
+        # Mensagem de carregamento
         msg_carregando = (
             f"🔄 Consultando a regulação <b>{num_reg}</b> na FMS... "
             "Por favor, aguarde."
@@ -317,7 +409,7 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
         # Consulta a FMS
         resultado = await consultar_status_fms(num_reg)
 
-        # Busca os dados complementares salvos no Supabase
+        # Busca dados complementares no Supabase
         res_db = (
             supabase.table("AlertaSUS_2.0")
             .select("*")
@@ -337,10 +429,17 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
                 supabase.table("AlertaSUS_2.0").update(
                     {"status_anterior": status_novo}
                 ).eq("numero_reg", num_reg).eq(
-                    "chat_id", str(update.effective_user.id)
+                    "chat_id", str(user_id)
                 ).execute()
         except Exception as e:
             logger.error(f"Erro ao atualizar status_anterior: {e}")
+
+                # Contador final (usa o valor já calculado no início, sem re-consultar)
+        restantes_agora = max(0, restantes - 1)
+        await msg_alvo.reply_text(
+            f"<i>📊 Verificações específicas restantes hoje: <b>{restantes_agora}/5</b></i>",
+            parse_mode="HTML"
+        )
 
     except Exception as e:
         logger.error(f"Erro em processar_verificar_especifico: {e}")

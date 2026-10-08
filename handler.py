@@ -209,6 +209,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "(botão <b>[/]</b> ao lado da barra de digitação)."
     )
 
+    # 🆕 Aviso de limites (apenas para usuários comuns)
+    try:
+        from verificacao_limite import pode_verificar, ADMIN_ID
+
+        if user.id != ADMIN_ID:
+            _, _, rest_todas = pode_verificar(str(user.id), "todas")
+            _, _, rest_esp = pode_verificar(str(user.id), "especifico")
+
+            mensagem += (
+                f"\n\n📊 <b>Seus limites de hoje:</b>\n"
+                f"• <b>Verificar todas:</b> {rest_todas}/2\n"
+                f"• <b>Verificar específico:</b> {rest_esp}/5\n\n"
+                f"<i>🕐 O bot monitora suas regulações automaticamente "
+                f"a cada 6 horas, mesmo sem você pedir!</i>"
+            )
+    except Exception as e:
+        logger.warning(f"Erro ao carregar limites em /start: {e}")
+
     # Se veio de clique em botão (callback_query)
     if update.callback_query:
         try:

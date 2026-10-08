@@ -357,9 +357,9 @@ def main():
         callback_resultado,
         pattern="^enq_(encerrar|reabrir|apagar|atualizar)_\\d+$"
     ))
-    app.add_handler(CallbackQueryHandler(
-        processar_verificar_especifico, pattern="^ver_esp_"
-    ))
+    #app.add_handler(CallbackQueryHandler(
+    #processar_verificar_especifico, pattern="^ver_esp_"
+    #))
 
         # ─── Servidor HTTP auxiliar (Render / Railway) ───
     PORT = int(os.environ.get("PORT", "8080"))
@@ -393,4 +393,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()  # Evita duplicação no Windows
     main()
