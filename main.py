@@ -391,8 +391,5 @@ def main():
     logger.info("Iniciando o bot VigiaSaude via polling...")
     app.run_polling(drop_pending_updates=True)
 
-
 if __name__ == "__main__":
-    import multiprocessing
-    multiprocessing.freeze_support()  # Evita duplicação no Windows
     main()
