@@ -290,7 +290,6 @@ def main():
     app.add_handler(CommandHandler("verificar_todos", comando_verificar_todas))
     app.add_handler(CommandHandler("verificar_especifico", iniciar_verificar_especifico))
     app.add_handler(CommandHandler("corrigir", iniciar_corrigir))
-    app.add_handler(CommandHandler("excluir", iniciar_excluir))
     app.add_handler(CommandHandler("planos", comando_planos))
     app.add_handler(CommandHandler("privacidade", comando_privacidade))
     app.add_handler(CommandHandler("suporte", menu_suporte))

@@ -343,9 +343,18 @@ async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         
         msg = "⚠️ <b>Selecione qual regulação deseja excluir permanentemente:</b>"
         if update.message:
-            await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(teclado), parse_mode="HTML")
+            await update.message.reply_text(
+                msg,
+                reply_markup=InlineKeyboardMarkup(teclado),
+                parse_mode="HTML"
+            )
         elif update.callback_query:
-            await update.callback_query.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(teclado), parse_mode="HTML")
+            await update.callback_query.message.reply_text(
+                msg,
+                reply_markup=InlineKeyboardMarkup(teclado),
+                parse_mode="HTML"
+            )
+
         context.user_data["_em_fluxo_admin"] = "excluir"
         return SELECIONAR_REGULACAO_EXCLUIR
     except Exception as e:
@@ -382,6 +391,7 @@ async def selecionar_regulacao_excluir_callback(update: Update, context: Context
     return SELECIONAR_REGULACAO_EXCLUIR
 
 async def confirmar_exclusao_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    print(f"🔴 DEBUG EXCLUIR: {update.callback_query.data if update.callback_query else 'NONE'}", flush=True)
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -391,15 +401,25 @@ async def confirmar_exclusao_callback(update: Update, context: ContextTypes.DEFA
         context.user_data.clear()
         return ConversationHandler.END
 
-    if data == "conf_excl_sim":
-        num_reg = context.user_data.get("del_num_reg")
-        user_id = update.effective_user.id
-        try:
-            supabase.table("AlertaSUS_2.0").delete().eq("numero_reg", num_reg).eq("chat_id", user_id).execute()
-            await query.edit_message_text(f"🗑️ Regulação <b>{num_reg}</b> excluída com sucesso.", parse_mode="HTML")
-        except Exception as e:
-            logger.error(f"Erro ao excluir regulação no Supabase: {e}")
-            await query.edit_message_text("❌ Erro ao excluir regulação do banco de dados.")
+        if data == "conf_excl_sim":
+            num_reg = context.user_data.get("del_num_reg")
+            user_id = update.effective_user.id
+            try:
+                r = supabase.table("AlertaSUS_2.0").delete().eq("numero_reg", num_reg).eq("chat_id", user_id).execute()
+                if len(r.data) == 0:
+                    logger.error(f"DELETE retornou 0 linhas — reg={num_reg} chat={user_id}")
+                    await query.edit_message_text(
+                        "⚠️ Não foi possível excluir. Tente novamente ou contate o suporte.",
+                        parse_mode="HTML"
+                    )
+                else:
+                    await query.edit_message_text(
+                        f"🗑️ Regulação <b>{num_reg}</b> excluída com sucesso.",
+                        parse_mode="HTML"
+                    )
+            except Exception as e:
+                logger.error(f"Erro ao excluir regulação no Supabase: {e}")
+                await query.edit_message_text("❌ Erro ao excluir a regulação.")
 
     context.user_data.clear()
     return ConversationHandler.END
