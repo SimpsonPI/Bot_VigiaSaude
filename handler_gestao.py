@@ -111,6 +111,25 @@ async def selecionar_regulacao_callback(update: Update, context: ContextTypes.DE
         num_reg = data.replace("corr_reg_", "")
         context.user_data["edit_num_reg"] = num_reg
 
+        # Busca os dados atuais (filtrado por chat_id)
+        chat_id = update.effective_user.id
+        dados = {}
+        try:
+            res = supabase.table("AlertaSUS_2.0").select("*").eq("numero_reg", num_reg).eq("chat_id", chat_id).execute()
+            if res.data:
+                dados = res.data[0]
+        except Exception as e:
+            logger.error(f"Erro ao buscar dados da regulação: {e}")
+
+        resumo_atual = (
+            f"📋 <b>Regulação selecionada:</b> <code>{num_reg}</code>\n\n"
+            f"👤 <b>Paciente:</b> {dados.get('nome_paciente', 'Não informado')}\n"
+            f"🩺 <b>Especialidade:</b> {dados.get('cbo', 'Não informado')}\n"
+            f"📱 <b>Celular:</b> {dados.get('celular', 'Não informado')}\n"
+            f"🏥 <b>Procedimento:</b> {dados.get('procedimento', 'Não informado')}\n\n"
+            f"✏️ <b>Escolha qual campo deseja alterar:</b>"
+        )
+
         teclado = [
             [InlineKeyboardButton("🆔 ID da Regulação", callback_data="corr_campo_numero_reg")],
             [InlineKeyboardButton("👤 Nome do Paciente", callback_data="corr_campo_nome_paciente")],
@@ -121,7 +140,7 @@ async def selecionar_regulacao_callback(update: Update, context: ContextTypes.DE
         ]
 
         await query.edit_message_text(
-            f"📋 Regulação selecionada: <b>{num_reg}</b>\n\nEscolha qual campo deseja alterar:",
+            resumo_atual,
             reply_markup=InlineKeyboardMarkup(teclado),
             parse_mode="HTML"
         )
