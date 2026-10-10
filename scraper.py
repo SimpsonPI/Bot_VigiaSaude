@@ -3,13 +3,14 @@ import re
 import random
 import asyncio
 import logging
+from datetime import datetime, timezone, timedelta
+from rate_limiter import consultar_com_limite
 import httpx
 from bs4 import BeautifulSoup
 from telegram.helpers import escape_markdown
 from config import URL_BUSCA_FMS, SCRAPER_KEY
 
 logger = logging.getLogger(__name__)
-
 
 def _extrair_valor_campo_fms(soup: BeautifulSoup, rotulo: str) -> str | None:
     rotulo_normalizado = rotulo.strip().lower()
@@ -161,7 +162,7 @@ def _extrair_dados_html(soup: BeautifulSoup) -> dict:
     return {
         "sucesso": True,
         "encontrado": True,
-        "situacao": situacao,
+        "situacao": _status_corrigido(situacao, dados_mapeados["data_consulta"]),
         "posicao_fila": dados_mapeados["posicao_fila"],
         "previsao_atendimento": dados_mapeados["previsao_atendimento"],
         "data_consulta": dados_mapeados["data_consulta"],
@@ -191,6 +192,30 @@ def nome_paciente_exibicao(nome: str | None) -> str:
         return "Não informado"
     return nome.strip()
 
+MARGEM_VENCIMENTO_HORAS = 3
+
+
+def _status_corrigido(situacao: str | None, data_consulta: str | None) -> str | None:
+    """
+    Se o portal diz 'Agendada' mas a data/hora já passou (com margem),
+    retorna 'Vencida'.
+    Formato esperado: 'DD/MM/YYYY - HH:MM'
+    """
+    if not situacao or not data_consulta:
+        return situacao
+    if str(situacao).strip().lower() != "agendada":
+        return situacao
+    try:
+        partes = str(data_consulta).split(" - ")
+        data_str = partes[0].strip()
+        hora_str = partes[1].strip() if len(partes) > 1 else "23:59"
+        dt_consulta = datetime.strptime(f"{data_str} {hora_str}", "%d/%m/%Y %H:%M")
+        agora_br = (datetime.now(timezone.utc) - timedelta(hours=3)).replace(tzinfo=None)
+        if dt_consulta + timedelta(hours=MARGEM_VENCIMENTO_HORAS) < agora_br:
+            return "Vencida"
+    except Exception as e:
+        logging.warning(f"Falha ao corrigir status com data '{data_consulta}': {e}")
+    return situacao
 
 async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict:
     atraso = random.uniform(1.0, 2.0)
@@ -256,7 +281,7 @@ async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict
 
 async def consultar_status_sus(numero_reg: str) -> str | None:
     try:
-        resultado = await consultar_status_fms(numero_reg)
+        resultado = await consultar_com_limite(num_reg)
         if isinstance(resultado, dict) and resultado.get("sucesso"):
             return resultado.get("situacao") or "Informada no portal"
         return None

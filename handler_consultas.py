@@ -318,13 +318,13 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
             "🔍 <b>Selecione qual regulação deseja verificar:</b>\n"
             "<i>Ou digite o ID abaixo:</i>\n\n"
 
-            "🎨 <b>ENTENDA AS CORES:</b>\n"
-            "🟢 <b>Agendada</b> — Consulta marcada! Confirme no posto.\n"
-            "🟡 <b>Em fila</b> — Aguardando. Continue monitorando.\n"
-            "🔵 <b>Vencida</b> — Renove no posto o quanto antes!\n"
-            "🔴 <b>Cancelada</b> — Precisa de atenção imediata.\n"
-            "🟣 <b>Reativar</b> — Voltou a valer. Acompanhe.\n"
-            "⚪ <b>Sem status</b> — Ainda não localizada.\n\n"
+                        "🎨 <b>ENTENDA AS CORES:</b>\n"
+            "🟢 <b>Agendada</b> — Compareça à UBS para assinatura e carimbo de confirmação.\n"
+            "🟡 <b>Em fila</b> — Você está na fila de espera. Continue monitorando.\n"
+            "🔵 <b>Vencida</b> — Revalidação não feita no prazo de 60 dias ou data do procedimento ultrapassada. Renove na UBS.\n"
+            "🔴 <b>Cancelada</b> — Cancelada por você ou pelo portal FMS. Procure a UBS para justificativa.\n"
+            "🟣 <b>Revalidada</b> — Revalidação feita antes do prazo de 60 dias.\n"
+            "⚪ <b>Sem status</b> — Portal FMS ainda não retornou status.\n\n"
 
             "💡 <i>Fique de olho nas 🟡 <b>Em fila</b> — são as que mais mudam de status!</i>\n\n"
 
