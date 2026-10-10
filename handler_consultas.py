@@ -309,27 +309,36 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
         teclado_botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_ver_esp")])
         reply_markup = InlineKeyboardMarkup(teclado_botoes)
 
-                # 4. Contador de restantes (usa função que ignora intervalo)
-        from verificacao_limite import restantes_reais
-        restantes_esp = restantes_reais(str(user_id), "especifico")
+                                # 4b. Rodapé dinâmico (admin vs usuário)
+        from verificacao_limite import _eh_admin as _check_admin
+        eh_admin = _check_admin(str(user_id))
+
+        if eh_admin:
+            rodape = "👑 <b>Admin</b> · sem limite\n🕐 <i>Monitoramento automático a cada 6h</i>"
+        else:
+            rodape = f"📊 <b>Específicas hoje:</b> {restantes_esp}/10\n🕐 <i>Monitoramento automático a cada 6h</i>"
+
 
         # 5. Menu com legenda colorida
         msg = (
-            "🔍 <b>Selecione qual regulação deseja verificar:</b>\n"
+            "🔍 <b>Selecione qual regulação verificar</b>\n"
             "<i>Ou digite o ID abaixo:</i>\n\n"
 
-                        "🎨 <b>ENTENDA AS CORES:</b>\n"
-            "🟢 <b>Agendada</b> — Compareça à UBS para assinatura e carimbo de confirmação.\n"
-            "🟡 <b>Em fila</b> — Você está na fila de espera. Continue monitorando.\n"
-            "🔵 <b>Vencida</b> — Revalidação não feita no prazo de 60 dias ou data do procedimento ultrapassada. Renove na UBS.\n"
-            "🔴 <b>Cancelada</b> — Cancelada por você ou pelo portal FMS. Procure a UBS para justificativa.\n"
-            "🟣 <b>Revalidada</b> — Revalidação feita antes do prazo de 60 dias.\n"
-            "⚪ <b>Sem status</b> — Portal FMS ainda não retornou status.\n\n"
+            "━━━━━━━━━━━━━━━\n"
+            "🎨 <b>LEGENDA DE STATUS</b>\n"
+            "━━━━━━━━━━━━━━━\n\n"
 
-            "💡 <i>Fique de olho nas 🟡 <b>Em fila</b> — são as que mais mudam de status!</i>\n\n"
+            "🟢 <b>Agendada</b> · vá à UBS assinar e carimbar\n"
+            "🟡 <b>Em fila</b> · aguarde, monitorando\n"
+            "🔵 <b>Vencida</b> · revalidação atrasada\n"
+            "🔴 <b>Cancelada</b> · procure a UBS\n"
+            "🟣 <b>Revalidar</b> · procure a UBS antes dos 60 dias\n"
+            "⚪ <b>Sem status</b> · portal não informou\n\n"
 
-            f"📊 <b>Verificações específicas hoje:</b> {restantes_esp}/5\n"
-            f"<i>O bot também monitora automaticamente a cada 6h 🕐</i>"
+            "💡 <i>Fique de olho nas 🟡 Em fila!</i>\n\n"
+
+            "━━━━━━━━━━━━━━━\n"
+            f"{rodape}"
         )
 
         # 6. Substitui o carregamento pelo menu final
