@@ -1,3 +1,13 @@
+import sys as _sys, traceback as _tb
+
+def _audit(event, args):
+    if event in ("subprocess.Popen", "os.exec", "os.system", "os.posix_spawn"):
+        with open(r"C:\Users\User\Pictures\Bot_VigiaSaude\audit.log", "a", encoding="utf-8") as f:
+            f.write(f"\n{'='*70}\nEVENTO: {event}\nARGS: {args}\nSTACK:\n")
+            _tb.print_stack(file=f)
+
+_sys.addaudithook(_audit)
+
 from dotenv import load_dotenv
 from handler_broadcast import conv_broadcast
 from admin_panel import comando_painel, callback_painel
@@ -254,6 +264,7 @@ def main():
     app = (
         ApplicationBuilder()
         .token(token)
+        .concurrent_updates(False)
         .request(request)
         .get_updates_request(request)
         .post_init(post_init)

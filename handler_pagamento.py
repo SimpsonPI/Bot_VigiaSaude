@@ -12,10 +12,8 @@ logger = logging.getLogger(__name__)
 
 sdk = mercadopago.SDK(os.getenv("MERCADOPAGO_ACCESS_TOKEN", ""))
 
-PLANOS = {
-    "trimestral": {"nome": "Pro Trimestral (3 meses)", "valor": 9.99},
-    "semestral": {"nome": "Pro Semestral (6 meses)", "valor": 14.99},
-}
+# Planos agora vêm de planos_config.py (fonte única de verdade)
+import planos_config as pc
 
 
 async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -26,21 +24,23 @@ async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_id = query.from_user.id
         first_name = query.from_user.first_name or "Usuario"
         last_name = query.from_user.last_name or "VigiaSaude"
-        # Callback chega como "pix_trimestral" ou "pix_semestral"
+        # Callback chega como "pix_mensal", "pix_pro_trimestral", "pix_pro_semestral"
         plano_chave = query.data.replace("pix_", "")
-        if plano_chave not in PLANOS:
-            plano_chave = "trimestral"
+        if not pc.get(plano_chave):
+            plano_chave = "pro_trimestral"
         chat_id = query.message.chat_id
     else:
         user_id = update.effective_user.id
         first_name = update.effective_user.first_name or "Usuario"
         last_name = update.effective_user.last_name or "VigiaSaude"
-        plano_chave = context.args[0].lower() if context.args else "trimestral"
+        plano_chave = context.args[0].lower() if context.args else "pro_trimestral"
+        if not pc.get(plano_chave):
+            plano_chave = "pro_trimestral"
         chat_id = update.effective_chat.id
 
-    detalhes_plano = PLANOS.get(plano_chave, PLANOS["trimestral"])
-    nome_plano = detalhes_plano["nome"]
-    valor = detalhes_plano["valor"]
+    plano = pc.get(plano_chave)
+    nome_plano = plano["nome"]
+    valor = plano["preco"]
 
     payment_data = {
         "transaction_amount": float(valor),

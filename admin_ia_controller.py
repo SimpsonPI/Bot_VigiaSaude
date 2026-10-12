@@ -274,7 +274,7 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
         conhecimento = (
             "O VigiaSaúde é um serviço independente que monitora regulações de saúde (consultas e exames) "
             "no SUS de Teresina-PI. Ele avisa o usuário quando há mudança no status da regulação. "
-            "Planos: Degustação (7 dias grátis), Trimestral (R$ 9,99) e Semestral (R$ 14,99). "
+            "Planos: Degustação (7 dias grátis), Mensal (R$ 9,99), Trimestral (R$ 19,99) e Semestral (R$ 29,99). "
             "Cadastro: Número do SUS, Nome, Celular, Data de nascimento, ID da Regulação, Especialidade e Procedimento."
         )
 

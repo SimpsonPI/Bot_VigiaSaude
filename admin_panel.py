@@ -61,7 +61,7 @@ def _texto_planos() -> str:
         "👑 <b>GESTÃO DE PLANOS E ACESSOS</b>\n\n"
         "• <code>/cortesia 123456789</code> — Concede VIP ilimitado\n"
         "• <code>/remover_cortesia 123456789</code> — Remove cortesia\n"
-        "• <code>/dar_plano 123456789 trimestral 90</code> — Concede plano\n"
+        "• <code>/dar_plano 123456789 mensal 30</code> — Concede plano (30/90/180 dias)\n"
         "• <code>/retirar_plano 123456789</code> — Remove plano pago\n"
         "• <code>/retirar_degustacao 123456789</code> — Remove degustação\n\n"
         "<i>💡 Use o ID sem os símbolos &lt; &gt;.</i>"

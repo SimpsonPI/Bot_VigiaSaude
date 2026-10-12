@@ -21,6 +21,7 @@ BASE_DIR = Path(__file__).resolve().parent
 PID_FILE = BASE_DIR / "servidor.pid"
 LOG_FILE = BASE_DIR / "servidor.log"
 BOT_SCRIPT = "main.py"
+PYTHON_EXE = r"C:\Users\User\AppData\Local\Python\pythoncore-3.14-64\python.exe"
 
 
 # ─── Funções auxiliares ───
@@ -36,19 +37,23 @@ def _ler_pid() -> int | None:
 
 
 def _esta_rodando(pid: int | None) -> bool:
-    """Verifica se o processo com esse PID está ativo."""
+    """Verifica se o processo com esse PID é de fato o nosso bot."""
     if pid is None:
         return False
     try:
-        # Windows
         if sys.platform == "win32":
+            # Usa CIM pra pegar a linha de comando do processo
+            cmd = [
+                "powershell", "-NoProfile", "-Command",
+                f"(Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\").CommandLine"
+            ]
             output = subprocess.check_output(
-                ["tasklist", "/FI", f"PID eq {pid}"],
-                stderr=subprocess.DEVNULL,
-                text=True,
-            )
-            return str(pid) in output
-        # Linux/Mac
+                cmd, stderr=subprocess.DEVNULL, text=True, timeout=5
+            ).strip()
+            if not output:
+                return False
+            # Só considera rodando se a linha de comando mencionar main.py
+            return "main.py" in output
         else:
             os.kill(pid, 0)
             return True
@@ -108,8 +113,9 @@ def start():
     env["PYTHONUTF8"] = "1"
 
     if sys.platform == "win32":
+        PYTHON_EXE = r"C:\Users\User\AppData\Local\Python\pythoncore-3.14-64\python.exe"
         proc = subprocess.Popen(
-            [sys.executable, "-u", BOT_SCRIPT],
+            [PYTHON_EXE, "-u", BOT_SCRIPT],
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             cwd=str(BASE_DIR),

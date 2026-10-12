@@ -25,12 +25,9 @@ def set_telegram_bot(bot):
 
 def _calcular_dias_plano(tipo_plano: str) -> int:
     p = str(tipo_plano).lower()
-    if "degustacao" in p or "free" in p:
-        return 7
-    if "trimestral" in p:
-        return 90
-    if "semestral" in p:
-        return 180
+    def _calcular_dias_plano(tipo_plano: str) -> int:
+        import planos_config as pc
+        return pc.dias(tipo_plano)
 
 
 async def processar_pagamento_aprovado(payment_id: str) -> bool:

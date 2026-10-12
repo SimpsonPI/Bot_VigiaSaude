@@ -47,15 +47,17 @@ SEGMENTOS = {
         "emoji": "🎁",
         "filtro": {"tipo_plano": "degustacao", "status_in": ["ativo", "active"]},
     },
-    "trimestral": {
-        "nome": "⭐ Só trimestral",
-        "emoji": "⭐",
-        "filtro": {"tipo_plano": "trimestral", "status_in": ["ativo", "active"]},
+        "mensal": {
+        "nome": "🟢 Só mensal",
+        "filtro": {"tipo_plano": "mensal", "status_in": ["ativo", "active"]},
     },
-    "semestral": {
+    "pro_trimestral": {
+        "nome": "⭐ Só trimestral",
+        "filtro": {"tipo_plano": "pro_trimestral", "status_in": ["ativo", "active"]},
+    },
+    "pro_semestral": {
         "nome": "🚀 Só semestral",
-        "emoji": "🚀",
-        "filtro": {"tipo_plano": "semestral", "status_in": ["ativo", "active"]},
+        "filtro": {"tipo_plano": "pro_semestral", "status_in": ["ativo", "active"]},
     },
     "cortesia": {
         "nome": "👑 Só cortesia",
@@ -107,10 +109,13 @@ def _teclado_segmentos() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("🎁 Degustação", callback_data="bc_seg_degustacao"),
-            InlineKeyboardButton("⭐ Trimestral", callback_data="bc_seg_trimestral"),
+            InlineKeyboardButton("🟢 Mensal", callback_data="bc_seg_mensal"),
         ],
         [
-            InlineKeyboardButton("🚀 Semestral", callback_data="bc_seg_semestral"),
+            InlineKeyboardButton("⭐ Trimestral", callback_data="bc_seg_pro_trimestral"),
+            InlineKeyboardButton("🚀 Semestral", callback_data="bc_seg_pro_semestral"),
+        ],
+        [
             InlineKeyboardButton("👑 Cortesia", callback_data="bc_seg_cortesia"),
         ],
         [InlineKeyboardButton("❌ Cancelar", callback_data="bc_cancelar")],

@@ -226,20 +226,40 @@ async def comando_dar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data_vencimento = data_inicio + timedelta(days=dias)
 
     try:
-        supabase.table("assinaturas").upsert({
-            "chat_id": str(target_id),
-            "tipo_plano": nome_plano,
-            "status": "ativo",
-            "limite_ids": 999,
-            "data_inicio": data_inicio.isoformat(),
-            "data_vencimento": data_vencimento.isoformat()
-        }, on_conflict="chat_id").execute()
+        # Verifica se já existe
+        existente = (
+            supabase.table("assinaturas")
+            .select("id")
+            .eq("chat_id", str(target_id))
+            .execute()
+        )
 
+        payload = {
+            "tipo_plano": "cortesia",
+            "status": "ativo",
+            "data_inicio": datetime.now(timezone.utc).isoformat(),
+            "data_vencimento": None,
+        }
+
+        if existente.data:
+            # UPDATE no registro existente
+            supabase.table("assinaturas").update(payload).eq(
+                "chat_id", str(target_id)
+            ).execute()
+        else:
+            # INSERT novo
+            payload["chat_id"] = str(target_id)
+            supabase.table("assinaturas").insert(payload).execute()
+
+        await update.message.reply_text(
+            f"🎁 Cortesia aplicada com sucesso para o ID <code>{target_id}</code>.",
+            parse_mode="HTML"
+        )
         await update.message.reply_text(
             f"✅ <b>Plano Concedido com Sucesso!</b>\n\n"
             f"• <b>Usuário ID:</b> <code>{target_id}</code>\n"
-            f"• <b>Novo Plano:</b> {nome_plano}\n"
-            f"• <b>Validade:</b> {dias} dias (Até {data_vencimento.strftime('%d/%m/%Y')})",
+            f"• <b>Novo Plano:</b> Cortesia\n"
+            f"• <b>Validade:</b> Ilimitada",
             parse_mode="HTML"
         )
 

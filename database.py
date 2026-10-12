@@ -21,14 +21,11 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # --- AUXILIARES DE PLANOS ---
 
 def calcular_dias_plano(tipo_plano: str) -> int:
-    """Retorna a quantidade de dias de validade de um determinado plano."""
-    plano_lower = tipo_plano.lower()
-    if "degustacao" in plano_lower or "free" in plano_lower:
-        return 7
-    elif "trimestral" in plano_lower:
-        return 90
-    elif "semestral" in plano_lower:
-        return 180
+    """Retorna a quantidade de dias de validade de um determinado plano.
+    Fonte única: planos_config.py
+    """
+    import planos_config as pc
+    return pc.dias(tipo_plano)
     
 
 

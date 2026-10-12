@@ -3,6 +3,7 @@ from html import escape
 import logging
 from time import timezone
 import warnings
+import planos_config as pc
 
 from telegram import (
     BotCommand,
@@ -275,32 +276,19 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
 
     keyboard = []
     if not ja_usou_degustacao:
-        keyboard.append(
-            [
-                InlineKeyboardButton(
-                    "🎁 Ativar Degustação (7 dias grátis)",
-                    callback_data="plano_degustacao",
-                )
-            ]
-        )
-    keyboard.append(
-        [
+        keyboard.append([
             InlineKeyboardButton(
-                "⭐ Plano Trimestral (R$ 9,99)", callback_data="plano_trimestral"
+                "🎁 Ativar Degustação (7 dias grátis)",
+                callback_data="plano_degustacao",
             )
-        ]
-    )
-    keyboard.append(
-        [
-            InlineKeyboardButton(
-                "🚀 Plano Semestral (R$ 14,99)", callback_data="plano_semestral"
-            )
-        ]
-    )
-    keyboard.append([
-    InlineKeyboardButton("🤖 Central de Atendimento", url="https://t.me/central_vigiasaude_bot")
-])
-    return InlineKeyboardMarkup(keyboard)
+        ])
+
+    # Planos pagos — sempre aparecem
+    import planos_config as pc
+    for p in pc.planos_pagos():
+        keyboard.append([
+            InlineKeyboardButton(p["nome_botao"], callback_data=f"plano_{p['chave']}")
+        ])
 
 
 def usuario_tem_acesso(plano_info: dict) -> bool:
@@ -409,10 +397,7 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         "💎 <b>Planos Disponíveis</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "• ⭐ <b>Trimestral</b> — R$ 9,99 (3 meses)\n"
-        "  <i>Até 5 regulações monitoradas</i>\n\n"
-        "• 🚀 <b>Semestral</b> — R$ 14,99 (6 meses)\n"
-        "  <i>Até 9 regulações monitoradas</i>\n\n"
+                f"{pc.texto_lista_planos()}\n\n"
         "💠 <b>Pagamento:</b> Pix (QR Code ou Copia e Cola)\n"
         "⚡ <b>Liberação:</b> Instantânea após a confirmação\n"
     )
@@ -485,26 +470,26 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard_botoes = [
             [
                 InlineKeyboardButton(
-                    "⭐ Trimestral (R$ 9,99)", callback_data="plano_trimestral"
+                    pc.nome_botao("pro_trimestral"), callback_data="plano_pro_trimestral"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    "🚀 Semestral (R$ 14,99)", callback_data="plano_semestral"
+                    pc.nome_botao("pro_semestral"), callback_data="plano_pro_semestral"
                 )
             ],
             [InlineKeyboardButton("💳 Ver todos os planos", callback_data="planos")],
         ]
 
     elif data == "plano_trimestral":
-        texto = "⭐ <b>Plano Trimestral</b>\n\n• Até 5 regulações.\n<b>Valor:</b> R$ 9,99 / trimestre"
+        texto = f"{pc.emoji('pro_trimestral')} <b>{pc.nome('pro_trimestral')}</b>\n\n• Até {pc.limite('pro_trimestral')} regulações.\n<b>Valor:</b> R$ {pc.preco('pro_trimestral'):.2f} / trimestre"
         keyboard_botoes = [
             [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_trimestral")],
             [InlineKeyboardButton("⬅️ Voltar aos Planos", callback_data="planos")],
         ]
 
     elif data == "plano_semestral":
-        texto = "🚀 <b>Plano Semestral</b>\n\n• Até 9 regulações.\n<b>Valor:</b> R$ 14,99 / semestre"
+        texto = f"{pc.emoji('pro_semestral')} <b>{pc.nome('pro_semestral')}</b>\n\n• Até {pc.limite('pro_semestral')} regulações.\n<b>Valor:</b> R$ {pc.preco('pro_semestral'):.2f} / semestre"
         keyboard_botoes = [
             [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_semestral")],
             [InlineKeyboardButton("⬅️ Voltar aos Planos", callback_data="planos")],
@@ -525,8 +510,16 @@ def verificar_plano_ativo(user_id: int) -> tuple[bool, dict]:
     Verifica se o usuário tem plano ativo.
     Retorna (ativo: bool, info: dict)
     """
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, timedelta
     from database import supabase
+
+    # 👑 Admin tem acesso total, sempre
+    try:
+        from config import ADMIN_IDS, ADMIN_CHAT_ID
+        if user_id in ADMIN_IDS or user_id == ADMIN_CHAT_ID:
+            return True, {"tipo_plano": "admin", "status": "ativo", "ilimitado": True}
+    except Exception:
+        pass
 
     try:
         res = (
@@ -563,11 +556,10 @@ def verificar_plano_ativo(user_id: int) -> tuple[bool, dict]:
 
     try:
         venc_dt = datetime.fromisoformat(str(venc).replace("Z", "+00:00"))
-        from datetime import timedelta
         if datetime.now(timezone.utc) >= (venc_dt - timedelta(hours=12)):
             return False, info
     except Exception as e:
-        logger.error(f"Erro ao parsear vencimento: {e}")
+        logger.warning(f"Erro ao parsear data_vencimento ({venc}): {e}")
         return False, info
 
     return True, info
@@ -592,8 +584,7 @@ async def enviar_alerta_plano_expirado(update: Update, context: ContextTypes.DEF
         "• 🏥 <b>Sem monitoramento contínuo</b> — você pode perder prazos importantes\n\n"
 
         "💚 <b>Reative agora e continue no controle:</b>\n"
-        "• ⭐ <b>Trimestral</b> — R$ 9,99 (3 meses)\n"
-        "• 🚀 <b>Semestral</b> — R$ 14,99 (6 meses)\n\n"
+        f"{pc.texto_lista_planos()}"
 
         "🎁 <i>Renovação em menos de 1 minuto, direto pelo Pix.</i>\n\n"
 
@@ -1053,8 +1044,7 @@ def _montar_msg_teaser(mudancas: list) -> str:
         f"⚠️ Houve <b>mudança real</b> no status das suas regulações. "
         f"Para ver <b>o que mudou</b> (status, posição na fila, datas), "
         f"reative seu plano agora:\n\n"
-        f"• ⭐ <b>Trimestral</b> — R$ 9,99 (3 meses)\n"
-        f"• 🚀 <b>Semestral</b> — R$ 14,99 (6 meses)\n\n"
+                f"{pc.texto_lista_planos()}\n\n"
         f"⏱️ <i>Reativação em menos de 1 minuto via Pix.</i>"
     )
 
@@ -1497,8 +1487,7 @@ async def enviar_oferta_primeira_regulacao(update: Update, context: ContextTypes
             "sempre que o status mudar.\n\n"
             "💡 <i>Você está na degustação de 7 dias (até 2 regulações).</i>\n\n"
             "<b>Quer monitorar mais regulações?</b>\n"
-            "⭐ Trimestral (R$ 9,99) → até 5 regulações / 3 meses\n"
-            "🚀 Semestral (R$ 14,99) → até 9 regulações / 6 meses"
+            f"{pc.texto_lista_planos()}"
         )
 
         teclado = InlineKeyboardMarkup([
@@ -1548,10 +1537,7 @@ async def enviar_oferta_limite_atingido(
             f"⚠️ <b>Você atingiu o limite do seu plano atual!</b>\n\n"
             f"📊 <b>Regulações monitoradas:</b> {total}/{limite}\n\n"
             "Para cadastrar mais regulações, escolha um plano Pro:\n\n"
-            "⭐ <b>Trimestral (R$ 9,99)</b>\n"
-            "   Até 5 regulações / 3 meses\n\n"
-            "🚀 <b>Semestral (R$ 14,99)</b>\n"
-            "   Até 9 regulações / 6 meses\n\n"
+            f"{pc.texto_lista_planos()}\n\n"
             "💠 <i>Pagamento via Pix, liberação imediata.</i>\n\n"
             "👇 Escolha seu plano abaixo:"
         )
@@ -1617,8 +1603,7 @@ async def enviar_alerta_expiracao(context, chat_id: str, tipo_plano: str, dias: 
     texto = (
         f"{titulo}\n\n"
         f"{texto_corpo}\n\n"
-        "⭐ <b>Trimestral (R$ 9,99)</b> → 5 regulações / 3 meses\n"
-        "🚀 <b>Semestral (R$ 14,99)</b> → 9 regulações / 6 meses\n"
+        f"{pc.texto_lista_planos()}\n"
         f"{urgencia}\n\n"
         "👇 Escolha seu plano:"
     )

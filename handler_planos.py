@@ -2,8 +2,10 @@ import logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from database import supabase
+import planos_config as pc
 
 logger = logging.getLogger(__name__)
+
 
 async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
     """Gera os botões de planos verificando se a degustação foi usada no Supabase."""
@@ -20,7 +22,7 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
             for row in res.data:
                 if (
                     row.get("usou_degustacao") is True
-                    or row.get("tipo_plano") == "degustacao"
+                    or pc.normalizar(row.get("tipo_plano")) == "degustacao"
                 ):
                     ja_usou_degustacao = True
                     break
@@ -30,35 +32,27 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
 
     keyboard = []
 
+    # Botão de degustação só se ainda não usou
     if not ja_usou_degustacao:
         keyboard.append([
             InlineKeyboardButton(
-                "🎁 Plano Degustação (Grátis)", callback_data="plano_degustacao"
+                pc.nome_botao("degustacao"), callback_data="plano_degustacao"
             )
         ])
 
+    # Planos pagos — sempre aparecem
+    for p in pc.planos_pagos():
         keyboard.append([
-        InlineKeyboardButton(
-            "⭐ Plano Trimestral (R$ 9,99)", callback_data="plano_trimestral"
-        )
-    ])
-    keyboard.append([
-        InlineKeyboardButton(
-            "🚀 Plano Semestral (R$ 14,99)", callback_data="plano_semestral"
-        )
-    ])
-    keyboard.append([
-        #InlineKeyboardButton(
-            #"💬 Falar com Comercial", url="https://wa.me/5586994083113"
-        #)
-    #])
+            InlineKeyboardButton(p["nome_botao"], callback_data=f"plano_{p['chave']}")
+        ])
 
     return InlineKeyboardMarkup(keyboard)
+
 
 def usuario_tem_acesso(plano_info: dict) -> bool:
     """Valida se o usuário possui acesso liberado (Cortesia, Degustação ou Pago)."""
     status_bruto = str(plano_info.get("status", "")).strip().lower()
-    tipo_plano = str(plano_info.get("tipo_plano", "")).strip().lower()
+    tipo_plano = pc.normalizar(plano_info.get("tipo_plano"))
     usou_degustacao = plano_info.get("usou_degustacao", False)
 
     is_cortesia = tipo_plano == "cortesia"
@@ -69,6 +63,7 @@ def usuario_tem_acesso(plano_info: dict) -> bool:
         or (is_degustacao and (usou_degustacao or status_bruto == "ativo"))
         or (status_bruto == "ativo")
     )
+
 
 async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Exibe o menu de planos adaptado para Degustação, Cortesia VIP, Pago ou Sem Plano."""
@@ -89,28 +84,15 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dados = []
 
     plano_info = dados[0] if dados else {}
-    
-    tipo_plano = str(plano_info.get("tipo_plano", "")).strip().lower()
+    tipo_plano = pc.normalizar(plano_info.get("tipo_plano"))
     is_cortesia = tipo_plano == "cortesia"
     is_degustacao = tipo_plano == "degustacao"
     is_ativo = usuario_tem_acesso(plano_info)
 
     if is_ativo and not is_degustacao:
-        # Nome amigável por tipo de plano
-        nomes_planos = {
-            "pro": "Pro",
-            "pro_trimestral": "Pro Trimestral",
-            "trimestral": "Pro Trimestral",
-            "pro_semestral": "Pro Semestral",
-            "semestral": "Pro Semestral",
-            "cortesia": "Cortesia VIP 👑",
-        }
-        tipo_formatado = nomes_planos.get(tipo_plano, "Pro")
-
-        # Limite com fallback real (usa "Ilimitado" se None ou vazio)
+        nome_plano_atual = pc.nome(tipo_plano) if tipo_plano != "cortesia" else "Cortesia VIP 👑"
         limite = plano_info.get("limite_ids") or "Ilimitado"
 
-        # Vencimento
         venc = plano_info.get("data_vencimento")
         if venc:
             try:
@@ -124,7 +106,7 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         texto = (
             "✨ <b>Sua Assinatura está Ativa!</b>\n\n"
-            f"• <b>Plano Atual:</b> {tipo_formatado}\n"
+            f"• <b>Plano Atual:</b> {nome_plano_atual}\n"
             "• <b>Status:</b> Ativo 🟢\n"
             f"• <b>Limite de Monitoramentos:</b> {limite}\n"
             f"• <b>Válido até:</b> {venc_txt}\n\n"
@@ -135,7 +117,7 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif is_ativo and is_degustacao:
         texto = (
             "🎁 <b>Você está utilizando o Plano Degustação (Grátis)!</b>\n\n"
-            "Seu período de teste está <b>ativo</b> no VigiaSaude.\n"
+            "Seu período de teste está <b>ativo</b> no VigiaSaúde.\n"
             "• <b>Limite Atual:</b> Até 2 regulações cadastradas\n\n"
             "💡 <i>Se desejar ampliar seu limite de monitoramentos, consulte nossos planos Pro abaixo:</i>"
         )
@@ -143,7 +125,7 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     else:
         texto = (
-            "💳 <b>Planos e Assinaturas — VigiaSaude</b>\n\n"
+            "💳 <b>Planos e Assinaturas — VigiaSaúde</b>\n\n"
             "Acompanhe suas consultas e exames sem preocupações. Escolha o plano ideal "
             "para você e receba notificações instantâneas no seu Telegram assim que sua regulação andar!\n\n"
             "<i>Selecione uma das opções abaixo para ver mais detalhes:</i>"
@@ -156,6 +138,7 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
 
+
 async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ativa a degustação ou exibe opções de pagamento via Pix."""
     query = update.callback_query
@@ -167,6 +150,7 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     telegram_id = query.from_user.id
 
+    # ─── Degustação ───
     if data == "plano_degustacao":
         try:
             supabase.table("assinaturas").upsert(
@@ -174,7 +158,7 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "chat_id": str(telegram_id),
                     "tipo_plano": "degustacao",
                     "status": "ativo",
-                    "limite_ids": 2,
+                    "limite_ids": pc.limite("degustacao"),
                     "usou_degustacao": True,
                 },
                 on_conflict="chat_id",
@@ -186,89 +170,50 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
         texto = (
             "🎁 <b>Plano Degustação Ativado!</b>\n\n"
             "Seu período de teste gratuito já está funcionando.\n\n"
-            "• <b>Status:</b> Ativo\n"
-            "• <b>Capacidade:</b> Até 2 regulações cadastradas\n"
+            f"• <b>Status:</b> Ativo\n"
+            f"• <b>Capacidade:</b> Até {pc.limite('degustacao')} regulações cadastradas\n"
             "• <b>Alertas:</b> Notificações diretas no Telegram\n\n"
             "Aproveite os recursos da plataforma!"
         )
-
         keyboard_botoes = [
             [InlineKeyboardButton("⚡ Ver Planos Pro", callback_data="planos")]
         ]
 
-        elif data == "plano_trimestral":
-        texto = (
-            "⭐ <b>Plano Trimestral (3 meses)</b>\n\n"
-            "• <b>Monitoramento Contínuo:</b> Notificações automáticas via Telegram.\n"
-            "• <b>Capacidade:</b> Até 5 regulações cadastradas.\n\n"
-            "<b>Valor:</b> R$ 9,99 / trimestre"
-        )
-        keyboard_botoes = [
-            [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_trimestral")],
-            [InlineKeyboardButton("⬅️ Voltar aos Planos", callback_data="planos")],
-        ]
+    # ─── Planos pagos ───
+    elif data.startswith("plano_"):
+        plano_chave = data.replace("plano_", "")
+        plano = pc.get(plano_chave)
 
-    elif data == "plano_semestral":
-        texto = (
-            "🚀 <b>Plano Semestral (6 meses)</b>\n\n"
-            "• <b>Monitoramento Contínuo:</b> Notificações automáticas por 6 meses.\n"
-            "• <b>Capacidade Ampliada:</b> Até 9 regulações cadastradas.\n\n"
-            "<b>Valor:</b> R$ 14,99 / semestre"
-        )
-        keyboard_botoes = [
-            [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_semestral")],
-            [InlineKeyboardButton("⬅️ Voltar aos Planos", callback_data="planos")],
-        ]
+        if not plano:
+            texto = "Opção inválida."
+            keyboard_botoes = [[InlineKeyboardButton("⬅️ Voltar", callback_data="planos")]]
+        else:
+            periodo_txt = {
+                30: "mês",
+                90: "trimestre",
+                180: "semestre",
+            }.get(plano["dias"], f"{plano['dias']} dias")
+
+            badge = f"\n{plano['badge']}" if plano.get("badge") else ""
+
+            texto = (
+                f"{plano['emoji']} <b>{plano['nome']} ({plano['dias']} dias)</b>{badge}\n\n"
+                f"• <b>Monitoramento Contínuo:</b> Notificações automáticas via Telegram.\n"
+                f"• <b>Capacidade:</b> Até {plano['limite_ids']} regulações cadastradas.\n"
+                f"• <b>Perfil:</b> {plano['subtitulo']}\n\n"
+                f"<b>Valor:</b> R$ {plano['preco']:.2f} / {periodo_txt}"
+            )
+            keyboard_botoes = [
+                [InlineKeyboardButton("💳 Pagar via Pix", callback_data=f"pix_{plano_chave}")],
+                [InlineKeyboardButton("⬅️ Voltar aos Planos", callback_data="planos")],
+            ]
+
     else:
         texto = "Opção inválida."
-        keyboard_botoes = [
-            [InlineKeyboardButton("⬅️ Voltar", callback_data="planos")]
-        ]
+        keyboard_botoes = [[InlineKeyboardButton("⬅️ Voltar", callback_data="planos")]]
 
     await query.edit_message_text(
         text=texto,
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(keyboard_botoes),
     )
-
-    async def verificar_vencimentos(app):
-    """Verifica assinaturas que vencem em 1 dia e envia alerta."""
-
-    from datetime import datetime, timedelta, timezone
-    import asyncio
-    
-    agora = datetime.now(timezone.utc)
-    alvo = agora + timedelta(days=1)  # vence em 1 dia
-    
-    try:
-        # Busca assinaturas ativas que ainda não expiraram
-        res = supabase.table("assinaturas").select("*").eq("status", "ativo").execute()
-        for assinatura in res.data:
-            venc = assinatura.get("data_vencimento")
-            if not venc:
-                continue
-            venc_dt = datetime.fromisoformat(venc.replace("Z", "+00:00"))
-            # Se faltar exatamente 1 dia (ou menos) para vencer
-            if venc_dt <= alvo and venc_dt > agora:
-                chat_id = assinatura["chat_id"]
-                tipo = assinatura.get("tipo_plano", "")
-                # Mensagem personalizada
-                if tipo == "degustacao":
-                    msg = "⚠️ Seu plano degustação expira amanhã! Aproveite e assine um plano Pro para continuar monitorando suas regulações."
-                else:
-                    msg = "⚠️ Seu plano Pro expira amanhã! Renove para não perder o acesso."
-                
-                teclado = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("💳 Ver Planos", callback_data="planos")]
-                ])
-                try:
-                    await app.bot.send_message(
-                        chat_id=chat_id,
-                        text=msg,
-                        reply_markup=teclado,
-                        parse_mode="HTML"
-                    )
-                except Exception as e:
-                    logger.error(f"Erro ao enviar alerta para {chat_id}: {e}")
-    except Exception as e:
-        logger.error(f"Erro na verificação de vencimentos: {e}")

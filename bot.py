@@ -6,6 +6,7 @@ import logging
 import asyncio
 from telegram import BotCommand, BotCommandScopeAllPrivateChats
 from admin_ia_controller import executar_acao_admin
+import planos_config as pc
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -101,8 +102,7 @@ async def verificar_vencimentos(app):
                         "⚠️ <b>Seu plano degustação expira amanhã!</b>\n\n"
                         "Para continuar monitorando suas regulações sem interrupção, "
                         "assine um dos nossos planos Pro:\n"
-                        "• ⭐ Trimestral (R$ 9,99)\n"
-                        "• 🚀 Semestral (R$ 14,99)\n\n"
+                        f"{pc.texto_lista_planos()}\n\n"
                         "Clique no botão abaixo para ver os planos."
                     )
                 else:

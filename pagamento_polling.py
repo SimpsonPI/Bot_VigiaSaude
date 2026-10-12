@@ -17,62 +17,7 @@ sdk = mercadopago.SDK(MERCADOPAGO_ACCESS_TOKEN) if mercadopago else None
 # Bot injetado pelo main.py
 _telegram_bot = None
 
-# ==========================================
-# BENEFÍCIOS DOS PLANOS
-# ==========================================
-BENEFICIOS_PLANO = {
-    "degustacao": {
-        "nome": "Degustação",
-        "emoji": "🎁",
-        "beneficios": [
-            "Até 2 regulações monitoradas",
-            "Notificações em tempo real no Telegram",
-            "Acesso a todas as funcionalidades",
-        ],
-    },
-    "trimestral": {
-        "nome": "Pro Trimestral",
-        "emoji": "⭐",
-        "beneficios": [
-            "Até 5 regulações monitoradas",
-            "Notificações em tempo real no Telegram",
-            "Acompanhamento automático de status",
-            "Suporte via bot de atendimento",
-        ],
-    },
-    "semestral": {
-        "nome": "Pro Semestral",
-        "emoji": "🚀",
-        "beneficios": [
-            "Até 9 regulações monitoradas",
-            "Notificações em tempo real no Telegram",
-            "Acompanhamento automático de status",
-            "Suporte via bot de atendimento",
-        ],
-    },
-    "cortesia": {
-        "nome": "Cortesia VIP",
-        "emoji": "👑",
-        "beneficios": [
-            "Regulações ilimitadas",
-            "Notificações em tempo real no Telegram",
-            "Acompanhamento automático de status",
-            "Suporte prioritário",
-        ],
-    },
-}
-
-
-def _get_beneficios_plano(tipo_plano: str) -> dict:
-    p = str(tipo_plano).lower()
-    if "degustacao" in p:
-        return BENEFICIOS_PLANO["degustacao"]
-    if "semestral" in p:
-        return BENEFICIOS_PLANO["semestral"]
-    if "cortesia" in p:
-        return BENEFICIOS_PLANO["cortesia"]
-    return BENEFICIOS_PLANO["trimestral"]
-
+BENEFICIOS_PLANO = {}  # preenchido dinamicamente a partir do planos_config
 
 def _montar_mensagem_boas_vindas(tipo_plano, limite_ids, vencimento, is_renovacao: bool) -> str:
     info = _get_beneficios_plano(tipo_plano)
@@ -106,34 +51,27 @@ def set_telegram_bot(bot):
     global _telegram_bot
     _telegram_bot = bot
 
+def _get_beneficios_plano(tipo_plano: str) -> dict:
+    """Retorna dict de benefícios (nome, emoji, benefícios) do plano."""
+    import planos_config as pc
+    p = pc.get(tipo_plano)
+    if not p:
+        p = pc.get("degustacao")
+    return {
+        "nome": p["nome"],
+        "emoji": p["emoji"],
+        "beneficios": p.get("beneficios", []),
+    }
+
 
 def _calcular_dias_plano(tipo_plano: str) -> int:
-    p = str(tipo_plano).lower()
-    if "degustacao" in p or "free" in p:
-        return 7
-    if "trimestral" in p:
-        return 90
-    if "semestral" in p:
-        return 180
-    if "anual" in p:
-        return 365
-    return 30
+    import planos_config as pc
+    return pc.dias(tipo_plano)
 
 
 def _limite_por_plano(tipo_plano: str) -> int:
-    p = str(tipo_plano).lower()
-    if "cortesia" in p:
-        return 999
-    if "degustacao" in p:
-        return 2
-    if "trimestral" in p:
-        return 5
-    if "semestral" in p:
-        return 9
-    if "anual" in p:
-        return 9
-    return 5
-
+    import planos_config as pc
+    return pc.limite(tipo_plano)
 
 async def _consultar_pagamento_mp(payment_id: str) -> dict | None:
     """Consulta o pagamento no Mercado Pago. Retorna dict ou None."""

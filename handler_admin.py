@@ -1,5 +1,6 @@
 import os
 import logging
+import planos_config as pc
 from datetime import datetime, timezone
 from functools import wraps
 from telegram import Update
@@ -63,7 +64,7 @@ async def comando_conceder_cortesia(update: Update, context: ContextTypes.DEFAUL
         supabase.table("assinaturas").upsert({
             "chat_id": str(target_id),
             "tipo_plano": "cortesia",
-            "limite_ids": 99,
+            "limite_ids": pc.limite(nome_plano) or 99,
             "status": "ativo",
             "data_inicio": datetime.now(timezone.utc).isoformat(),
             "data_vencimento": None
