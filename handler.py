@@ -290,6 +290,8 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton(p["nome_botao"], callback_data=f"plano_{p['chave']}")
         ])
 
+    return InlineKeyboardMarkup(keyboard)
+
 
 def usuario_tem_acesso(plano_info: dict) -> bool:
     status_bruto = str(plano_info.get("status", "")).strip().lower()
@@ -362,14 +364,7 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• <b>Dias restantes:</b> {dias_txt}\n"
         )
     elif is_ativo:
-        nomes_planos = {
-            "pro": "Pro",
-            "pro_trimestral": "Pro Trimestral",
-            "trimestral": "Pro Trimestral",
-            "pro_semestral": "Pro Semestral",
-            "semestral": "Pro Semestral",
-        }
-        tipo_formatado = nomes_planos.get(tipo_plano, "Pro")
+        tipo_formatado = pc.nome(tipo_plano)
         dias_txt = f"{dias_restantes} dia(s)" if dias_restantes is not None else "—"
 
         # Alerta se estiver perto de vencer
@@ -405,8 +400,29 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ─── Junta tudo ───
     texto_final = cabecalho + planos_txt
 
-    # ─── Cria os botões ───
-    teclado = await obter_menu_planos(user_id)
+        # ─── Cria os botões (inteligente: só upgrades) ───
+    if is_cortesia:
+        # Cortesia: sem botões (acesso ilimitado)
+        teclado = None
+
+    elif is_ativo and not is_degustacao:
+        # Plano pago ativo → mostra só planos com MAIS regulações
+        limite_atual = plano_info.get("limite_ids") or 0
+        upgrades = [p for p in pc.planos_pagos() if p["limite_ids"] > limite_atual]
+        if upgrades:
+            botoes = [
+                [InlineKeyboardButton(p["nome_botao"], callback_data=f"plano_{p['chave']}")]
+                for p in upgrades
+            ]
+            botoes.append([InlineKeyboardButton("❌ Fechar", callback_data="iniciar")])
+            teclado = InlineKeyboardMarkup(botoes)
+        else:
+            # Já tem o plano máximo (semestral) → sem botões
+            teclado = None
+
+    else:
+        # Sem plano ou degustação → menu completo
+        teclado = await obter_menu_planos(user_id)
 
     # ─── Envia ───
     if update.callback_query:
@@ -436,11 +452,12 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     telegram_id = query.from_user.id
 
+    # ─── Degustação ───
     if data == "plano_degustacao":
         from datetime import datetime, timezone, timedelta
 
         agora = datetime.now(timezone.utc)
-        vencimento = agora + timedelta(days=7)
+        vencimento = agora + timedelta(days=pc.dias("degustacao"))
 
         try:
             supabase.table("assinaturas").upsert(
@@ -449,7 +466,7 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "tipo_plano": "degustacao",
                     "status": "ativo",
                     "data_vencimento": vencimento.isoformat(),
-                    "limite_ids": 2,          # ← CORRIGIDO (era 999)
+                    "limite_ids": pc.limite("degustacao"),
                     "usou_degustacao": True,
                     "ultimo_aviso": None,
                 },
@@ -462,38 +479,45 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🎁 <b>Degustação Ativada — 7 dias grátis!</b>\n\n"
             f"Você tem acesso ao VigiaSaúde até <b>{vencimento.strftime('%d/%m/%Y')}</b>.\n\n"
             "<b>O que você ganha na degustação:</b>\n"
-            "✅ Até <b>2 regulações</b> monitoradas\n"
+            f"✅ Até <b>{pc.limite('degustacao')} regulações</b> monitoradas\n"
             "✅ Avisos automáticos de mudança de status\n"
             "✅ Suporte via bot de atendimento\n\n"
             "💡 <i>Quer monitorar mais regulações? Assine um plano Pro:</i>"
         )
         keyboard_botoes = [
-            [
-                InlineKeyboardButton(
-                    pc.nome_botao("pro_trimestral"), callback_data="plano_pro_trimestral"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    pc.nome_botao("pro_semestral"), callback_data="plano_pro_semestral"
-                )
-            ],
+            [InlineKeyboardButton(pc.nome_botao("pro_trimestral"), callback_data="plano_pro_trimestral")],
+            [InlineKeyboardButton(pc.nome_botao("pro_semestral"), callback_data="plano_pro_semestral")],
             [InlineKeyboardButton("💳 Ver todos os planos", callback_data="planos")],
         ]
 
-    elif data == "plano_trimestral":
-        texto = f"{pc.emoji('pro_trimestral')} <b>{pc.nome('pro_trimestral')}</b>\n\n• Até {pc.limite('pro_trimestral')} regulações.\n<b>Valor:</b> R$ {pc.preco('pro_trimestral'):.2f} / trimestre"
-        keyboard_botoes = [
-            [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_trimestral")],
-            [InlineKeyboardButton("⬅️ Voltar aos Planos", callback_data="planos")],
-        ]
+    # ─── Planos pagos (genérico) ───
+    elif data.startswith("plano_") and data != "plano_degustacao":
+        plano_chave = data.replace("plano_", "")
+        plano = pc.get(plano_chave)
 
-    elif data == "plano_semestral":
-        texto = f"{pc.emoji('pro_semestral')} <b>{pc.nome('pro_semestral')}</b>\n\n• Até {pc.limite('pro_semestral')} regulações.\n<b>Valor:</b> R$ {pc.preco('pro_semestral'):.2f} / semestre"
-        keyboard_botoes = [
-            [InlineKeyboardButton("💳 Pagar via Pix", callback_data="pix_semestral")],
-            [InlineKeyboardButton("⬅️ Voltar aos Planos", callback_data="planos")],
-        ]
+        if not plano:
+            texto = "Opção inválida."
+            keyboard_botoes = [[InlineKeyboardButton("⬅️ Voltar", callback_data="planos")]]
+        else:
+            periodo_txt = {
+                30: "mês",
+                90: "trimestre",
+                180: "semestre",
+            }.get(plano["dias"], f"{plano['dias']} dias")
+
+            badge = f"\n{plano['badge']}" if plano.get("badge") else ""
+
+            texto = (
+                f"{plano['emoji']} <b>{plano['nome']} ({plano['dias']} dias)</b>{badge}\n\n"
+                f"• <b>Monitoramento Contínuo:</b> Notificações automáticas via Telegram.\n"
+                f"• <b>Capacidade:</b> Até {plano['limite_ids']} regulações cadastradas.\n"
+                f"• <b>Perfil:</b> {plano['subtitulo']}\n\n"
+                f"<b>Valor:</b> R$ {plano['preco']:.2f} / {periodo_txt}"
+            )
+            keyboard_botoes = [
+                [InlineKeyboardButton("💳 Pagar via Pix", callback_data=f"pix_{plano_chave}")],
+                [InlineKeyboardButton("⬅️ Voltar aos Planos", callback_data="planos")],
+            ]
 
     else:
         texto = "Opção inválida."

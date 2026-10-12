@@ -264,7 +264,7 @@ def main():
     app = (
         ApplicationBuilder()
         .token(token)
-        .concurrent_updates(False)
+        #.concurrent_updates(False)
         .request(request)
         .get_updates_request(request)
         .post_init(post_init)
