@@ -49,8 +49,18 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
-def usuario_tem_acesso(plano_info: dict) -> bool:
+def usuario_tem_acesso(plano_info: dict, user_id: int = None) -> bool:
     """Valida se o usuário possui acesso liberado (Cortesia, Degustação ou Pago)."""
+    # 👑 Admin tem acesso total, sempre
+    if user_id is not None:
+        try:
+            from config import is_admin
+            if is_admin(user_id):
+                logger.info(f"👑 Bypass admin em usuario_tem_acesso (planos) (user={user_id})")
+                return True
+        except Exception:
+            pass
+
     status_bruto = str(plano_info.get("status", "")).strip().lower()
     tipo_plano = pc.normalizar(plano_info.get("tipo_plano"))
     usou_degustacao = plano_info.get("usou_degustacao", False)
@@ -87,7 +97,7 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tipo_plano = pc.normalizar(plano_info.get("tipo_plano"))
     is_cortesia = tipo_plano == "cortesia"
     is_degustacao = tipo_plano == "degustacao"
-    is_ativo = usuario_tem_acesso(plano_info)
+    is_ativo = usuario_tem_acesso(plano_info, user_id)
 
     if is_ativo and not is_degustacao:
         nome_plano_atual = pc.nome(tipo_plano) if tipo_plano != "cortesia" else "Cortesia VIP 👑"

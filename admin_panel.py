@@ -7,11 +7,11 @@ from config import ADMIN_CHAT_ID
 
 logger = logging.getLogger(__name__)
 
-ADMIN_ID = ADMIN_CHAT_ID or 5242040324
+from config import ADMIN_IDS, ADMIN_CHAT_ID
 
 
 def _eh_admin(user_id: int) -> bool:
-    return user_id == ADMIN_ID
+    return user_id in ADMIN_IDS or user_id == ADMIN_CHAT_ID
 
 
 # ═══════════════════════════════════════════════
@@ -105,7 +105,7 @@ def _texto_sistema() -> str:
         "• <code>/start</code> — Volta ao menu principal do usuário\n"
         "• <code>/suporte</code> — Central de Atendimento\n\n"
         "<b>📌 Informações:</b>\n"
-        f"• Seu ID: <code>{ADMIN_ID}</code>\n"
+        f"• Seus IDs: <code>{ADMIN_IDS}</code> | <code>{ADMIN_CHAT_ID}</code>\n"
         "• Bot: @vigiasaude_bot"
     )
 
@@ -166,6 +166,49 @@ async def callback_painel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Selecione uma categoria:"
         )
         await query.edit_message_text(texto, parse_mode="HTML", reply_markup=_teclado_principal())
+        return
+
+        # ─── Atalhos: estatísticas e ativos ───
+        # ─── Atalhos: estatísticas e ativos (funciona via callback) ───
+    if data == "painel_estatisticas":
+        try:
+            from database_atendimento import buscar_estatisticas_admin_periodo
+            stats = await buscar_estatisticas_admin_periodo()
+
+            # Extrai os números principais
+            hoje = stats.get("hoje", {}) if isinstance(stats, dict) else {}
+            total_regs = hoje.get("regulacoes", stats.get("total_regulacoes", "—")) if isinstance(stats, dict) else "—"
+            total_users = stats.get("total_assinaturas_ativas", "—") if isinstance(stats, dict) else "—"
+
+            texto = (
+                "📊 <b>ESTATÍSTICAS RÁPIDAS</b>\n\n"
+                f"• Usuários ativos: <b>{total_users}</b>\n"
+                f"• Regulações hoje: <b>{total_regs}</b>\n\n"
+                "<i>Para relatório completo, use /estatisticas no chat.</i>"
+            )
+            await query.edit_message_text(texto, parse_mode="HTML", reply_markup=_teclado_voltar())
+        except Exception as e:
+            await query.edit_message_text(f"❌ Erro ao buscar estatísticas: {e}")
+        return
+
+    if data == "painel_ativos":
+        try:
+            from database import supabase
+            r = (supabase.table("assinaturas").select("chat_id, tipo_plano, status")
+                 .eq("status", "ativo").limit(10).execute())
+            lista = r.data or []
+
+            if not lista:
+                texto = "ℹ️ Nenhuma assinatura ativa no momento."
+            else:
+                linhas = ["📋 <b>ÚLTIMOS ATIVOS (máx. 10)</b>\n"]
+                for i, u in enumerate(lista, 1):
+                    linhas.append(f"{i}. <code>{u.get('chat_id')}</code> · {u.get('tipo_plano') or '—'}")
+                texto = "\n".join(linhas)
+
+            await query.edit_message_text(texto, parse_mode="HTML", reply_markup=_teclado_voltar())
+        except Exception as e:
+            await query.edit_message_text(f"❌ Erro ao buscar ativos: {e}")
         return
 
     mapeamento = {

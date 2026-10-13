@@ -45,6 +45,15 @@ async def verificar_assinatura(user_id: int) -> dict | None:
 
 def verificar_assinatura_ativa(user_id: int) -> bool:
     """Verifica se o usuário possui uma assinatura ativa no Supabase."""
+    # 👑 Admin tem acesso total, sempre
+    try:
+        from config import is_admin
+        if is_admin(user_id):
+            logger.info(f"👑 Bypass admin em verificar_assinatura_ativa (user={user_id})")
+            return True
+    except Exception:
+        pass
+
     try:
         res = supabase.table("assinaturas").select("*").eq("chat_id", str(user_id)).execute()
 

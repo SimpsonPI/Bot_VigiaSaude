@@ -1,13 +1,3 @@
-import sys as _sys, traceback as _tb
-
-def _audit(event, args):
-    if event in ("subprocess.Popen", "os.exec", "os.system", "os.posix_spawn"):
-        with open(r"C:\Users\User\Pictures\Bot_VigiaSaude\audit.log", "a", encoding="utf-8") as f:
-            f.write(f"\n{'='*70}\nEVENTO: {event}\nARGS: {args}\nSTACK:\n")
-            _tb.print_stack(file=f)
-
-_sys.addaudithook(_audit)
-
 from dotenv import load_dotenv
 from handler_broadcast import conv_broadcast
 from admin_panel import comando_painel, callback_painel
@@ -51,6 +41,11 @@ from telegram.error import TimedOut, NetworkError
 from admin_ia_controller import executar_acao_admin
 
 from handler import (
+    admin_cb_ver_todas,
+    admin_cb_minhas_regs,
+    admin_cb_estatisticas,
+    admin_cb_ativos,
+    admin_cb_refresh,
     comando_planos,
     comando_privacidade,
     comando_verificar_todas,
@@ -310,7 +305,12 @@ def main():
     app.add_handler(CommandHandler("painel", comando_painel))
     app.add_handler(CommandHandler("admin", comando_painel))
     app.add_handler(CommandHandler("menu_admin", comando_painel))
-    app.add_handler(CallbackQueryHandler(callback_painel, pattern="^painel_"))
+    app.add_handler(CallbackQueryHandler(admin_cb_ver_todas, pattern="^admin_ver_todas$"))
+    app.add_handler(CallbackQueryHandler(admin_cb_minhas_regs, pattern="^admin_minhas$"))
+    app.add_handler(CallbackQueryHandler(admin_cb_estatisticas, pattern="^painel_estatisticas$"))
+    app.add_handler(CallbackQueryHandler(admin_cb_ativos, pattern="^painel_ativos$"))
+    app.add_handler(CallbackQueryHandler(admin_cb_refresh, pattern="^admin_refresh$"))
+    app.add_handler(CallbackQueryHandler(callback_painel, pattern="^painel_"))  # ← por último
     app.add_handler(CommandHandler("estatisticas", comando_estatisticas))
     app.add_handler(CommandHandler("ativos", comando_listar_ativos))
     app.add_handler(CommandHandler("detalhes", comando_detalhes))

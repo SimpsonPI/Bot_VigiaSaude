@@ -14,7 +14,10 @@ from utils import (
 
 async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
-    context.user_data["nome"] = formatar_maiusculo(update.message.text)
+    nome = update.message.text.strip()
+    # 🔒 Sanitização: remove tags HTML e limita tamanho
+    nome = nome.replace("<", "").replace(">", "").replace("&", "&amp;")[:80]
+    context.user_data["nome"] = nome
     await update.message.reply_text("Digite o número de <b>celular/WhatsApp</b> (com DDD):", parse_mode="HTML")
     return ETAPA_CELULAR
 
@@ -33,14 +36,19 @@ async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
     cbo = update.message.text.strip()
+    # 🔒 Sanitização
+    cbo = cbo.replace("<", "").replace(">", "").replace("&", "&amp;")[:80]
+    context.user_data["cbo"] = cbo
     context.user_data["cbo"] = formatar_maiusculo(cbo) if cbo != "0" else ""
     await update.message.reply_text("Qual a descrição do <b>Procedimento/Exame</b>?", parse_mode="HTML")
     return ETAPA_PROCEDIMENTO
 
 async def receber_procedimento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
-    context.user_data["procedimento"] = formatar_maiusculo(update.message.text)
-    # Restante do código do termo LGPD...
+    procedimento = update.message.text.strip()
+    # 🔒 Sanitização
+    procedimento = procedimento.replace("<", "").replace(">", "").replace("&", "&amp;")[:80]
+    context.user_data["procedimento"] = procedimento
 
 async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     from handler import (
@@ -129,6 +137,7 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
     )
     print(f"🔵 DEBUG CADASTRO: setando _em_fluxo_admin=cadastro", flush=True)
     context.user_data["_em_fluxo_admin"] = "cadastro"
+    print(f"🔵 RETORNO iniciar_cadastro_manual: ETAPA_SUS = {ETAPA_SUS}", flush=True)
     return ETAPA_SUS
 
 async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -152,10 +161,13 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     try:
         print(f"DEBUG: Buscando SUS {numero_sus} no Supabase...")
+        print(f"DEBUG: chat_id = {chat_id!r} (tipo: {type(chat_id).__name__})")
+        print(f"DEBUG: str(chat_id) = {str(chat_id)!r}")
 
         resposta = supabase.table("AlertaSUS_2.0").select("*").eq(
             "numero_sus", numero_sus
-        ).execute()
+        ).eq("chat_id", str(chat_id)).execute()
+        print(f"DEBUG: resposta.data tem {len(resposta.data) if resposta.data else 0} registros")
         registros = resposta.data
 
         if registros and len(registros) > 0:
@@ -189,12 +201,13 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
                 parse_mode="HTML",
                 reply_markup=teclado,
             )
+            print("✅ Mensagem de reuso enviada com sucesso!", flush=True)
             return ETAPA_CONFIRMAR_REUSO
 
     except Exception as e:
         print(f"ERRO no bloco do SUS: {e}")
 
-    print("DEBUG: SUS não encontrado. Indo para ETAPA_NOME.")
+    print(f"DEBUG: SUS não encontrado. Indo para ETAPA_NOME = {ETAPA_NOME}", flush=True)
     await update.message.reply_text("Qual o nome completo do paciente?")
     return ETAPA_NOME
 
@@ -232,6 +245,7 @@ async def callback_reuso_dados(update: Update, context: ContextTypes.DEFAULT_TYP
         return ETAPA_NOME
 
 async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    print(f"🔵 RECEBER_NOME chamado com texto: {update.message.text!r}", flush=True)
     if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
     context.user_data["nome"] = update.message.text.strip()
     await update.message.reply_text("Digite o número de <b>celular/WhatsApp</b> (com DDD):", parse_mode="HTML")
@@ -270,6 +284,7 @@ async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return ETAPA_REGULACAO
 
 async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    print(f"🔴 RECEBER_REGULACAO chamado com texto: {update.message.text!r}", flush=True)
     if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
     num_reg = re.sub(r"\D", "", update.message.text)
 

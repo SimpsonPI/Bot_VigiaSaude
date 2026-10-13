@@ -13,12 +13,12 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Lista de IDs de administradores autorizados
-ADMIN_IDS = [5242040324]  # Seu ID de admin
+from config import ADMIN_IDS, ADMIN_CHAT_ID  # fonte única
 
 
 def eh_admin(user_id: int) -> bool:
-    """Verifica se o usuário é administrador."""
-    return user_id in ADMIN_IDS
+    """Verifica se é admin — usa a fonte única de config.py."""
+    return user_id in ADMIN_IDS or user_id == ADMIN_CHAT_ID
 
 
 async def comando_estatisticas(update: Update, context: ContextTypes.DEFAULT_TYPE):

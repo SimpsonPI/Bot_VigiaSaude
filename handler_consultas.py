@@ -309,7 +309,11 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
         teclado_botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_ver_esp")])
         reply_markup = InlineKeyboardMarkup(teclado_botoes)
 
-                                # 4b. Rodapé dinâmico (admin vs usuário)
+        # 4a. Contador de específicas
+        from verificacao_limite import restantes_reais
+        restantes_esp = restantes_reais(str(user_id), "especifico")
+
+        # 4b. Rodapé dinâmico (admin vs usuário)
         from verificacao_limite import _eh_admin as _check_admin
         eh_admin = _check_admin(str(user_id))
 

@@ -199,10 +199,36 @@ async def callback_abrir_termo_privacidade(
 
 # --- HANDLER DO COMANDO /START E /INICIAR ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler principal do /start ou /iniciar."""
+    """Handler principal do /start ou /iniciar.
+    Admin: dashboard com metricas. Comum: tela padrao.
+    """
     user = update.effective_user
     nome = user.first_name or "Usuário"
 
+    # 👑 ADMIN → dashboard com metricas do sistema
+    from config import is_admin
+    if is_admin(user.id):
+        texto_admin, teclado_admin = await _montar_painel_admin(user.id)
+
+        if update.callback_query:
+            try:
+                await update.callback_query.answer()
+                await update.callback_query.edit_message_text(
+                    texto_admin, parse_mode="HTML", reply_markup=teclado_admin
+                )
+            except Exception:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=texto_admin, parse_mode="HTML",
+                    reply_markup=teclado_admin,
+                )
+        elif update.message:
+            await update.message.reply_text(
+                texto_admin, parse_mode="HTML", reply_markup=teclado_admin
+            )
+        return
+
+    # 👤 USUÁRIO COMUM → tela padrão (mantida)
     mensagem = (
         f"👋 Olá, <b>{nome}</b>! Bem-vindo ao <b>VigiaSaude</b>.\n\n"
         f"🆔 <b>Seu ID do Telegram:</b> <code>{user.id}</code>\n\n"
@@ -293,7 +319,17 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
-def usuario_tem_acesso(plano_info: dict) -> bool:
+def usuario_tem_acesso(plano_info: dict, user_id: int = None) -> bool:
+    # 👑 Admin tem acesso total, sempre
+    if user_id is not None:
+        try:
+            from config import is_admin
+            if is_admin(user_id):
+                logger.info(f"👑 Bypass admin em usuario_tem_acesso (user={user_id})")
+                return True
+        except Exception:
+            pass
+
     status_bruto = str(plano_info.get("status", "")).strip().lower()
     tipo_plano = str(plano_info.get("tipo_plano", "")).strip().lower()
     usou_degustacao = plano_info.get("usou_degustacao", False)
@@ -306,9 +342,244 @@ def usuario_tem_acesso(plano_info: dict) -> bool:
     )
 
 
+async def _montar_painel_admin(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
+    """Painel admin — Modelo B (cards compactos)."""
+    from datetime import datetime, timezone, timedelta
+
+    agora = datetime.now(timezone.utc)
+    ontem = agora - timedelta(days=1)
+
+    def _count(tabela, filtro=None):
+        try:
+            q = supabase.table(tabela).select("id", count="exact")
+            if filtro:
+                for k, v in filtro.items():
+                    q = q.eq(k, v)
+            r = q.execute()
+            return r.count if hasattr(r, "count") and r.count is not None else len(r.data or [])
+        except Exception:
+            return 0
+
+    def _count_24h(tabela):
+        try:
+            r = (supabase.table(tabela).select("id", count="exact")
+                 .gte("created_at", ontem.isoformat()).execute())
+            return r.count if hasattr(r, "count") and r.count is not None else len(r.data or [])
+        except Exception:
+            return 0
+
+    # ─── Métricas do sistema ───
+    total_users    = _count("assinaturas")
+    users_ativos   = _count("assinaturas", {"status": "ativo"})
+    total_regs     = _count("AlertaSUS_2.0")
+    total_pix_pend = _count("pagamentos_pix", {"status": "pending"})
+    novos_24h_users = _count_24h("assinaturas")
+    novos_24h_regs  = _count_24h("AlertaSUS_2.0")
+
+    # ─── Suas regulações ───
+    total_minhas = 0
+    m_agend = m_fila = m_venc = m_canc = 0
+    try:
+        res = supabase.table("AlertaSUS_2.0").select("status_anterior").eq("chat_id", user_id).execute()
+        lista = res.data or []
+        total_minhas = len(lista)
+
+        def _conta(sub):
+            return sum(1 for r in lista if sub in str(r.get("status_anterior") or "").lower())
+
+        m_agend = _conta("agend")
+        m_fila  = _conta("fila") + _conta("informada")
+        m_venc  = _conta("venc") + _conta("expirad")
+        m_canc  = _conta("cancel")
+    except Exception as e:
+        logger.warning(f"Erro ao contar regulações do admin: {e}")
+
+    hora = agora.strftime("%d/%m · %H:%M")
+
+    texto = (
+        f"👑 <b>Painel Admin</b>\n"
+        f"<i>{hora} UTC</i>\n\n"
+
+        "▪️ <b>SISTEMA</b>\n"
+        f"👥 {total_users} usuários · {users_ativos} ativos\n"
+        f"📋 {total_regs} regulações\n"
+        f"💰 {total_pix_pend} Pix pendente(s)\n\n"
+
+        "▪️ <b>HOJE (24h)</b>\n"
+        f"👥 +{novos_24h_users} usuários\n"
+        f"📋 +{novos_24h_regs} regulações\n\n"
+
+        "▪️ <b>MINHAS REGULAÇÕES</b>\n"
+        f"📊 {total_minhas} monitoradas\n"
+        f"🟢 {m_agend} · 🟡 {m_fila} · 🔵 {m_venc} · 🔴 {m_canc}"
+    )
+
+    botoes = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔍 Verificar", callback_data="admin_ver_todas"),
+         InlineKeyboardButton("📋 Minhas", callback_data="admin_minhas")],
+        [InlineKeyboardButton("📊 Stats", callback_data="painel_estatisticas"),
+         InlineKeyboardButton("👥 Ativos", callback_data="painel_ativos")],
+        [InlineKeyboardButton("🔄 Atualizar", callback_data="admin_refresh"),
+         InlineKeyboardButton("❌ Fechar", callback_data="iniciar")],
+    ])
+
+    return texto, botoes
+
+async def admin_cb_ver_todas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin clicou em 🔍 Verificar → dispara verificação de todas."""
+    try:
+        query = update.callback_query
+        await query.answer("🔍 Iniciando verificação...")
+
+        # Redireciona o usuário pro comando — o handler do comando cuida do resto
+        await query.edit_message_text(
+            "🔍 <b>Verificando suas regulações...</b>\n\n"
+            "<i>O bot vai consultar a FMS e te avisar em instantes.</i>\n\n"
+            "Use <code>/verificar_todos</code> pra rodar com feedback completo.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Voltar ao painel", callback_data="admin_refresh")]
+            ]),
+        )
+    except Exception as e:
+        logger.error(f"Erro em admin_cb_ver_todas: {e}")
+
+
+async def admin_cb_minhas_regs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin clicou em 📋 Minhas → abre lista de regulações."""
+    try:
+        query = update.callback_query
+        await query.answer()
+
+        res = supabase.table("AlertaSUS_2.0").select("numero_reg, nome_paciente, status_anterior, cbo") \
+            .eq("chat_id", query.from_user.id).execute()
+        lista = res.data or []
+
+        if not lista:
+            texto = "ℹ️ Você não tem regulações cadastradas."
+        else:
+            linhas = [f"📋 <b>Suas regulações ({len(lista)})</b>\n"]
+            for r in lista[:15]:
+                num = r.get("numero_reg", "—")
+                nome = (r.get("nome_paciente") or "—")[:20]
+                status = r.get("status_anterior") or "Sem status"
+                linhas.append(f"• <code>{num}</code> · {nome} · {status}")
+            if len(lista) > 15:
+                linhas.append(f"\n<i>... e mais {len(lista)-15}</i>")
+            texto = "\n".join(linhas)
+
+        await query.edit_message_text(
+            texto, parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Voltar ao painel", callback_data="admin_refresh")]
+            ]),
+        )
+    except Exception as e:
+        logger.error(f"Erro em admin_cb_minhas_regs: {e}")
+
+
+async def admin_cb_estatisticas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin clicou em 📊 Stats → mostra resumo inline."""
+    try:
+        query = update.callback_query
+        await query.answer()
+
+        def _c(t, f=None):
+            try:
+                q = supabase.table(t).select("id", count="exact")
+                if f:
+                    for k, v in f.items():
+                        q = q.eq(k, v)
+                r = q.execute()
+                return r.count if hasattr(r, "count") and r.count is not None else len(r.data or [])
+            except Exception:
+                return 0
+
+        tot_users = _c("assinaturas")
+        ativos = _c("assinaturas", {"status": "ativo"})
+        tot_regs = _c("AlertaSUS_2.0")
+        pix_pend = _c("pagamentos_pix", {"status": "pending"})
+
+        texto = (
+            "📊 <b>ESTATÍSTICAS</b>\n\n"
+            f"👥 Usuários: <b>{tot_users}</b> ({ativos} ativos)\n"
+            f"📋 Regulações: <b>{tot_regs}</b>\n"
+            f"💰 Pix pendentes: <b>{pix_pend}</b>\n\n"
+            "<i>Para relatório completo, use /estatisticas</i>"
+        )
+        await query.edit_message_text(
+            texto, parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Voltar ao painel", callback_data="admin_refresh")]
+            ]),
+        )
+    except Exception as e:
+        logger.error(f"Erro em admin_cb_estatisticas: {e}")
+
+
+async def admin_cb_ativos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin clicou em 👥 Ativos → lista assinaturas ativas."""
+    try:
+        query = update.callback_query
+        await query.answer()
+
+        r = (supabase.table("assinaturas")
+             .select("chat_id, tipo_plano, status")
+             .eq("status", "ativo").limit(15).execute())
+        lista = r.data or []
+
+        if not lista:
+            texto = "ℹ️ Nenhuma assinatura ativa."
+        else:
+            linhas = [f"👥 <b>Ativos ({len(lista)})</b>\n"]
+            for u in lista:
+                linhas.append(f"• <code>{u.get('chat_id')}</code> · {u.get('tipo_plano') or '—'}")
+            texto = "\n".join(linhas)
+
+        await query.edit_message_text(
+            texto, parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Voltar ao painel", callback_data="admin_refresh")]
+            ]),
+        )
+    except Exception as e:
+        logger.error(f"Erro em admin_cb_ativos: {e}")
+
+
+async def admin_cb_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin clicou em 🔄 Atualizar → re-busca métricas e redesenha o painel."""
+    try:
+        user_id = update.effective_user.id
+        texto, teclado = await _montar_painel_admin(user_id)
+        await update.callback_query.answer("🔄 Atualizado")
+        await update.callback_query.edit_message_text(
+            texto, parse_mode="HTML", reply_markup=teclado
+        )
+    except Exception as e:
+        logger.error(f"Erro em admin_cb_refresh: {e}")
+
 async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Tela unificada: mostra status atual + planos disponíveis para assinatura."""
+    """Admin: dashboard. Usuário: tela de planos."""
     user_id = update.effective_user.id
+
+    # 👑 Admin → dashboard profissional
+    from config import is_admin
+    if is_admin(user_id):
+        texto, teclado = await _montar_painel_admin(user_id)
+        if update.callback_query:
+            await update.callback_query.answer()
+            try:
+                await update.callback_query.edit_message_text(
+                    texto, parse_mode="HTML", reply_markup=teclado
+                )
+            except Exception:
+                await update.callback_query.message.reply_text(
+                    texto, parse_mode="HTML", reply_markup=teclado
+                )
+        else:
+            await update.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
+        return
+
     chat_id_str = str(user_id)
 
     # ─── Busca dados do usuário no Supabase ───
@@ -329,7 +600,7 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tipo_plano = str(plano_info.get("tipo_plano", "")).strip().lower()
     is_cortesia = tipo_plano == "cortesia"
     is_degustacao = tipo_plano == "degustacao"
-    is_ativo = usuario_tem_acesso(plano_info)
+    is_ativo = usuario_tem_acesso(plano_info, user_id)
 
     # ─── Calcula dias restantes ───
     from datetime import datetime, timezone
@@ -414,7 +685,7 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton(p["nome_botao"], callback_data=f"plano_{p['chave']}")]
                 for p in upgrades
             ]
-            botoes.append([InlineKeyboardButton("❌ Fechar", callback_data="iniciar")])
+            botoes.append([InlineKeyboardButton("⬅️ Voltar ao Suporte", callback_data="suporte")])
             teclado = InlineKeyboardMarkup(botoes)
         else:
             # Já tem o plano máximo (semestral) → sem botões
@@ -1723,4 +1994,10 @@ __all__ = [
     "faq_planos",
     "faq_governo",
     "mostrar_email_suporte",
+    "admin_cb_refresh",
+    "admin_cb_ver_todas",
+    "admin_cb_minhas_regs",
+    "admin_cb_estatisticas",
+    "admin_cb_ativos",
+    "admin_cb_refresh",
 ]

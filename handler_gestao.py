@@ -69,7 +69,8 @@ async def mostrar_resumo_regulacao(update_or_query, context, num_reg):
     Busca os dados atuais da regulação no Supabase e exibe o resumo para confirmação.
     """
     try:
-        response = supabase.table("AlertaSUS_2.0").select("*").eq("numero_reg", num_reg).execute()
+        chat_id = update_or_query.effective_user.id
+        response = supabase.table("AlertaSUS_2.0").select("*").eq("numero_reg", num_reg).eq("chat_id", str(chat_id)).execute()
         
         if response.data:
             reg = response.data[0]
