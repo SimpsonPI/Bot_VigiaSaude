@@ -8,7 +8,7 @@ from utils import (
     DISCLAIMER_TEXTO, TECLADO_MENU, TECLADO_CANCELAR,
     ETAPA_SUS, ETAPA_NOME, ETAPA_CELULAR, ETAPA_NASCIMENTO,
     ETAPA_REGULACAO, ETAPA_CBO, ETAPA_PROCEDIMENTO, ETAPA_LGPD,
-    ETAPA_CONFIRMAR_REUSO,
+    ETAPA_CONFIRMAR_REUSO, ETAPA_ESCOLHER_SUS,
     formatar_data, formatar_celular, formatar_maiusculo, verificar_se_e_menu_e_executar
 )
 
@@ -116,8 +116,10 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
         total_regs = 0
 
         # Cortesia = acesso ilimitado, nunca bloqueia
+        # 👑 Admin e cortesia = sem limite
+    from config import is_admin
     tipo_atual = str(info.get("tipo_plano") or "").lower()
-    if "cortesia" in tipo_atual:
+    if is_admin(user_id) or "cortesia" in tipo_atual or "admin" in tipo_atual:
         limite = 999
     else:
         limite = _obter_limite_plano(info)
@@ -127,18 +129,69 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
         await enviar_oferta_limite_atingido(update, context, total_regs, limite)
         return ConversationHandler.END
 
-    # 5. Continua o fluxo
+        # 5. Continua o fluxo — verifica SUS já cadastrados
     context.user_data.clear()
-    await update.message.reply_text(
-        "📝 <b>Iniciando cadastro de nova regulação.</b>\n\n"
-        f"Você tem <b>{total_regs}/{limite}</b> regulações monitoradas.\n\n"
-        "Por favor, digite o <b>número do Cartão SUS</b> do paciente (15 dígitos):",
-        parse_mode="HTML", reply_markup=TECLADO_CANCELAR
-    )
-    print(f"🔵 DEBUG CADASTRO: setando _em_fluxo_admin=cadastro", flush=True)
     context.user_data["_em_fluxo_admin"] = "cadastro"
-    print(f"🔵 RETORNO iniciar_cadastro_manual: ETAPA_SUS = {ETAPA_SUS}", flush=True)
-    return ETAPA_SUS
+
+    try:
+        res_sus = supabase.table("AlertaSUS_2.0").select(
+            "numero_sus, nome_paciente, celular, data_nascimento"
+        ).eq("chat_id", user_id).order("id", desc=True).execute()
+        registros = res_sus.data or []
+    except Exception as e:
+        logger.error(f"Erro ao buscar SUS: {e}")
+        registros = []
+
+    sus_unicos = {}
+    for r in registros:
+        num = r.get("numero_sus")
+        if num and num not in sus_unicos:
+            sus_unicos[num] = r
+    sus_lista = list(sus_unicos.items())
+
+    if not sus_lista:
+        await update.message.reply_text(
+            "📝 <b>Iniciando cadastro de nova regulação.</b>\n\n"
+            f"Você tem <b>{total_regs}/{limite}</b> regulações monitoradas.\n\n"
+            "Por favor, digite o <b>número do Cartão SUS</b> do paciente (15 dígitos):",
+            parse_mode="HTML", reply_markup=TECLADO_CANCELAR
+        )
+        return ETAPA_SUS
+
+    if len(sus_lista) == 1:
+        num, dados = sus_lista[0]
+        nome = dados.get("nome_paciente") or "—"
+        teclado = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Usar mesmo Cartão do SUS", callback_data=f"usar_sus_{num}")],
+            [InlineKeyboardButton("🔄 Cadastrar novo SUS", callback_data="novo_sus")],
+            [InlineKeyboardButton("❌ Cancelar", callback_data="iniciar")],
+        ])
+        await update.message.reply_text(
+            "📝 <b>Iniciando cadastro de nova regulação.</b>\n\n"
+            f"Você tem <b>{total_regs}/{limite}</b> regulações monitoradas.\n\n"
+            f"💳 Detectei um Cartão do SUS cadastrado:\n"
+            f"<code>{num}</code> · {nome}\n\n"
+            "Deseja usar o mesmo número de Cartão do SUS?",
+            parse_mode="HTML", reply_markup=teclado
+        )
+    else:
+        botoes = []
+        for num, dados in sus_lista:
+            nome = (dados.get("nome_paciente") or "—")[:22]
+            botoes.append([InlineKeyboardButton(
+                f"💳 {num} · {nome}",
+                callback_data=f"usar_sus_{num}"
+            )])
+        botoes.append([InlineKeyboardButton("➕ Cadastrar novo SUS", callback_data="novo_sus")])
+        botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="iniciar")])
+        await update.message.reply_text(
+            "📝 <b>Iniciando cadastro de nova regulação.</b>\n\n"
+            f"Você tem <b>{total_regs}/{limite}</b> regulações monitoradas.\n\n"
+            "💳 <b>Selecione qual Cartão do SUS deseja usar:</b>",
+            parse_mode="HTML", reply_markup=InlineKeyboardMarkup(botoes)
+        )
+
+    return ETAPA_ESCOLHER_SUS
 
 async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
@@ -160,14 +213,10 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     context.user_data['sus'] = numero_sus
 
     try:
-        print(f"DEBUG: Buscando SUS {numero_sus} no Supabase...")
-        print(f"DEBUG: chat_id = {chat_id!r} (tipo: {type(chat_id).__name__})")
-        print(f"DEBUG: str(chat_id) = {str(chat_id)!r}")
 
         resposta = supabase.table("AlertaSUS_2.0").select("*").eq(
             "numero_sus", numero_sus
         ).eq("chat_id", str(chat_id)).execute()
-        print(f"DEBUG: resposta.data tem {len(resposta.data) if resposta.data else 0} registros")
         registros = resposta.data
 
         if registros and len(registros) > 0:
@@ -184,7 +233,6 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             celular = dados_antigos.get('celular') or "Não informado"
             nasc = dados_antigos.get('data_nascimento') or "Não informado"
 
-            print("DEBUG: SUS encontrado! Aguardando confirmação.")
 
             teclado = InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ Usar esses dados", callback_data="reuso_sim")],
@@ -201,15 +249,58 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
                 parse_mode="HTML",
                 reply_markup=teclado,
             )
-            print("✅ Mensagem de reuso enviada com sucesso!", flush=True)
             return ETAPA_CONFIRMAR_REUSO
 
     except Exception as e:
         print(f"ERRO no bloco do SUS: {e}")
 
-    print(f"DEBUG: SUS não encontrado. Indo para ETAPA_NOME = {ETAPA_NOME}", flush=True)
     await update.message.reply_text("Qual o nome completo do paciente?")
     return ETAPA_NOME
+
+async def callback_escolher_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Processa a escolha do SUS no início do cadastro."""
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "novo_sus":
+        for k in ("sus", "nome", "celular", "nascimento"):
+            context.user_data.pop(k, None)
+        await query.edit_message_text(
+            "Ok! Digite o <b>número do Cartão SUS</b> do paciente (15 dígitos):",
+            parse_mode="HTML",
+        )
+        return ETAPA_SUS
+
+    if data.startswith("usar_sus_"):
+        num_sus = data.replace("usar_sus_", "")
+        try:
+            res = supabase.table("AlertaSUS_2.0").select(
+                "nome_paciente, celular, data_nascimento"
+            ).eq("chat_id", update.effective_user.id).eq(
+                "numero_sus", num_sus
+            ).order("id", desc=True).limit(1).execute()
+            dados = res.data[0] if res.data else {}
+        except Exception as e:
+            logger.error(f"Erro ao buscar dados do SUS: {e}")
+            dados = {}
+
+        context.user_data["sus"] = num_sus
+        context.user_data["nome"] = dados.get("nome_paciente") or ""
+        context.user_data["celular"] = dados.get("celular") or ""
+        context.user_data["nascimento"] = dados.get("data_nascimento") or ""
+
+        await query.edit_message_text(
+            f"✅ <b>SUS carregado:</b> <code>{num_sus}</code>\n\n"
+            f"👤 <b>Paciente:</b> {dados.get('nome_paciente') or '—'}\n"
+            f"📱 <b>Celular:</b> {dados.get('celular') or '—'}\n"
+            f"📅 <b>Nascimento:</b> {dados.get('data_nascimento') or '—'}\n\n"
+            "Agora digite o <b>ID da Regulação</b> (8 dígitos):",
+            parse_mode="HTML",
+        )
+        return ETAPA_REGULACAO
+
+    return ETAPA_ESCOLHER_SUS
 
 async def callback_reuso_dados(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Processa a escolha do usuário: reusar dados ou digitar do zero."""
@@ -245,7 +336,6 @@ async def callback_reuso_dados(update: Update, context: ContextTypes.DEFAULT_TYP
         return ETAPA_NOME
 
 async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    print(f"🔵 RECEBER_NOME chamado com texto: {update.message.text!r}", flush=True)
     if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
     context.user_data["nome"] = update.message.text.strip()
     await update.message.reply_text("Digite o número de <b>celular/WhatsApp</b> (com DDD):", parse_mode="HTML")
@@ -284,7 +374,6 @@ async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return ETAPA_REGULACAO
 
 async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    print(f"🔴 RECEBER_REGULACAO chamado com texto: {update.message.text!r}", flush=True)
     if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
     num_reg = re.sub(r"\D", "", update.message.text)
 
@@ -306,25 +395,71 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return ETAPA_REGULACAO
 
-    # ✅ Verifica duplicata na conta do usuário
+    # ✅ Rate limit de cadastros (5/dia)
+    from mitigacao_cadastro import pode_cadastrar, registrar_cadastro
+    chat_id = str(update.effective_user.id)
+    pode, motivo, restantes = pode_cadastrar(chat_id)
+    if not pode:
+        await update.message.reply_text(
+            "⏳ <b>Limite diário de cadastros atingido!</b>\n\n"
+            "Você já cadastrou <b>5 regulações</b> hoje.\n\n"
+            "💡 <i>Você pode cadastrar mais amanhã ou usar /corrigir para editar regulações existentes.</i>",
+            parse_mode="HTML",
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    # ✅ Verifica duplicata global (mesmo usuário ou outro)
     try:
-        chat_id = str(update.effective_user.id)
-        res_dup = supabase.table("AlertaSUS_2.0").select("id").eq(
+        chat_id_int = int(chat_id) if chat_id.isdigit() else chat_id
+        res_dup = supabase.table("AlertaSUS_2.0").select("id, chat_id").eq(
             "numero_reg", num_reg
-        ).eq("chat_id", int(chat_id) if chat_id.isdigit() else chat_id).execute()
+        ).execute()
 
         if res_dup.data:
-            await update.message.reply_text(
-                f"⚠️ <b>Você já cadastrou a regulação {num_reg}!</b>\n\n"
-                "• Para ver o status: use /verificar_especifico\n"
-                "• Para corrigir dados: use /corrigir\n\n"
-                "O cadastro foi cancelado.",
-                parse_mode="HTML",
+            mesmo_usuario = any(
+                str(r.get("chat_id")) == str(chat_id_int) for r in res_dup.data
             )
-            context.user_data.clear()
-            return ConversationHandler.END
+            if mesmo_usuario:
+                await update.message.reply_text(
+                    f"⚠️ <b>Você já cadastrou a regulação {num_reg}!</b>\n\n"
+                    "• Para ver o status: use /verificar_especifico\n"
+                    "• Para corrigir dados: use /corrigir\n\n"
+                    "O cadastro foi cancelado.",
+                    parse_mode="HTML",
+                )
+                context.user_data.clear()
+                return ConversationHandler.END
+            else:
+                await update.message.reply_text(
+                    "⚠️ <b>Este ID já está sendo monitorado por outro usuário.</b>\n\n"
+                    "Se você acredita que este ID é seu, entre em contato:\n"
+                    "📧 suportevigiasaude@gmail.com\n\n"
+                    "O cadastro foi cancelado.",
+                    parse_mode="HTML",
+                )
+
+                try:
+                    dono_chat_id = str(res_dup.data[0].get("chat_id"))
+                    await context.bot.send_message(
+                        chat_id=int(dono_chat_id),
+                        text=(
+                            "🔔 <b>Tentativa de cadastro detectada</b>\n\n"
+                            f"Alguém tentou cadastrar a regulação <code>{num_reg}</code> "
+                            "em outra conta.\n\n"
+                            "Se não foi você, sua regulação está segura."
+                        ),
+                        parse_mode="HTML",
+                    )
+                except Exception as e:
+                    logger.warning(f"Nao notificou dono original: {e}")
+
+                context.user_data.clear()
+                return ConversationHandler.END
     except Exception as e:
         logger.error(f"Erro ao verificar duplicata no cadastro: {e}")
+
+    registrar_cadastro(chat_id)
 
     # ✅ Salva o número da regulação
     context.user_data["numero_regulacao"] = num_reg

@@ -46,6 +46,7 @@ from handler_cadastro import (
     receber_sus,
     finalizar_cadastro,
     callback_reuso_dados,
+    callback_escolher_sus
 )
 
 from handler_consultas import (
@@ -69,6 +70,7 @@ from utils import (
     CONSULTAR_ID,
     ETAPA_CBO,
     ETAPA_CELULAR,
+    ETAPA_ESCOLHER_SUS,
     ETAPA_LGPD,
     ETAPA_CONFIRMAR_REUSO,
     ETAPA_NASCIMENTO,
@@ -1423,9 +1425,13 @@ conv_cadastro = ConversationHandler(
         CommandHandler("cadastrar_nova", iniciar_cadastro_manual),
         CallbackQueryHandler(iniciar_cadastro_manual, pattern="^cadastrar_nova$"),
     ],
-    states={
+
+            states={
+        ETAPA_ESCOLHER_SUS: [
+            CallbackQueryHandler(callback_escolher_sus, pattern="^(usar_sus_|novo_sus)")
+        ],
         ETAPA_SUS: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_sus)],
-        ETAPA_CONFIRMAR_REUSO: [          # ← NOVO BLOCO
+        ETAPA_CONFIRMAR_REUSO: [
             CallbackQueryHandler(
                 callback_reuso_dados, pattern="^reuso_(sim|nao)$"
             ),
