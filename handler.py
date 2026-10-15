@@ -46,7 +46,10 @@ from handler_cadastro import (
     receber_sus,
     finalizar_cadastro,
     callback_reuso_dados,
-    callback_escolher_sus
+    callback_escolher_sus,
+    callback_escolher_metodo,
+    receber_foto,
+    callback_confirmar_ocr,
 )
 
 from handler_consultas import (
@@ -70,6 +73,7 @@ from utils import (
     CONSULTAR_ID,
     ETAPA_CBO,
     ETAPA_CELULAR,
+    ETAPA_ESCOLHER_METODO,
     ETAPA_ESCOLHER_SUS,
     ETAPA_LGPD,
     ETAPA_CONFIRMAR_REUSO,
@@ -81,6 +85,8 @@ from utils import (
     SELECIONAR_CAMPO,
     SELECIONAR_REGULACAO,
     SELECIONAR_REGULACAO_EXCLUIR,
+    ETAPA_CONFIRMAR_REUSO, ETAPA_ESCOLHER_SUS,
+    ETAPA_AGUARDANDO_FOTO, ETAPA_CONFIRMAR_OCR, ETAPA_ESCOLHER_METODO,
 )
 
 try:
@@ -421,11 +427,177 @@ async def _montar_painel_admin(user_id: int) -> tuple[str, InlineKeyboardMarkup]
          InlineKeyboardButton("📋 Minhas", callback_data="admin_minhas")],
         [InlineKeyboardButton("📊 Stats", callback_data="painel_estatisticas"),
          InlineKeyboardButton("👥 Ativos", callback_data="painel_ativos")],
-        [InlineKeyboardButton("🔄 Atualizar", callback_data="admin_refresh"),
-         InlineKeyboardButton("❌ Fechar", callback_data="iniciar")],
+        [InlineKeyboardButton("📋 Enquetes", callback_data="admin_enquetes"),
+         InlineKeyboardButton("⚙️ Usuários", callback_data="admin_usuarios")],
+        [InlineKeyboardButton("📢 Comandos", callback_data="admin_comandos"),
+         InlineKeyboardButton("🔄 Atualizar", callback_data="admin_refresh")],
+        [InlineKeyboardButton("❌ Fechar", callback_data="iniciar")],
     ])
 
     return texto, botoes
+
+async def admin_cb_enquetes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sub-menu de enquetes."""
+    try:
+        query = update.callback_query
+        await query.answer()
+
+        try:
+            r = supabase.table("enquetes").select("id, status").execute()
+            enq = r.data or []
+            ativas = sum(1 for e in enq if str(e.get("status")).lower() == "ativa")
+            total = len(enq)
+        except Exception:
+            total = ativas = 0
+
+        texto = (
+            "📋 <b>ENQUETES</b>\n\n"
+            f"• Total: <b>{total}</b>\n"
+            f"• Ativas: <b>{ativas}</b>\n\n"
+            "Escolha uma ação:"
+        )
+
+        botoes = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 Último resultado", callback_data="admin_enq_resultado"),
+             InlineKeyboardButton("📈 Detalhado", callback_data="admin_enq_detalhado")],
+            [InlineKeyboardButton("📋 Listar todas", callback_data="admin_enq_listar")],
+            [InlineKeyboardButton("🛑 Encerrar/🗑️ Apagar", callback_data="admin_enq_info")],
+            [InlineKeyboardButton("⬅️ Voltar ao painel", callback_data="admin_refresh")],
+        ])
+
+        await query.edit_message_text(texto, parse_mode="HTML", reply_markup=botoes)
+    except Exception as e:
+        logger.error(f"Erro em admin_cb_enquetes: {e}")
+
+
+async def admin_cb_usuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sub-menu de gestão de usuários."""
+    try:
+        query = update.callback_query
+        await query.answer()
+
+        texto = (
+            "⚙️ <b>GESTÃO DE USUÁRIOS</b>\n\n"
+            "Os comandos abaixo precisam do <b>ID do usuário</b> como argumento.\n"
+            "Copie o ID em <b>👥 Ativos</b> e cole no comando.\n\n"
+
+            "/cortesia <code>&lt;id&gt;</code> — VIP ilimitado\n"
+            "/remover_cortesia <code>&lt;id&gt;</code> — Remove cortesia\n"
+            "/dar_plano <code>&lt;id&gt; &lt;plano&gt; &lt;dias&gt;</code> — Concede plano\n"
+            "/retirar_plano <code>&lt;id&gt;</code> — Remove plano\n"
+            "/retirar_degustacao <code>&lt;id&gt;</code> — Remove degustação\n"
+            "/bloquear <code>&lt;id&gt;</code> — Bloqueia\n"
+            "/detalhes <code>&lt;id&gt;</code> — Detalhes completos"
+        )
+
+        botoes = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👥 Ver ativos", callback_data="painel_ativos")],
+            [InlineKeyboardButton("📢 Lista completa", callback_data="admin_comandos")],
+            [InlineKeyboardButton("⬅️ Voltar ao painel", callback_data="admin_refresh")],
+        ])
+
+        await query.edit_message_text(texto, parse_mode="HTML", reply_markup=botoes)
+    except Exception as e:
+        logger.error(f"Erro em admin_cb_usuarios: {e}")
+
+
+async def admin_cb_comandos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Lista todos os comandos admin."""
+    try:
+        query = update.callback_query
+        await query.answer()
+
+        texto = (
+            "📢 <b>COMANDOS ADMINISTRATIVOS</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+            "📊 <b>Estatísticas</b>\n"
+            "/estatisticas — Visão geral\n"
+            "/ativos — Últimos 15 ativos\n"
+            "/detalhes &lt;id&gt; — Detalhes de um usuário\n\n"
+
+            "👥 <b>Gestão de acesso</b>\n"
+            "/cortesia &lt;id&gt; — VIP ilimitado\n"
+            "/remover_cortesia &lt;id&gt; — Remove cortesia\n"
+            "/dar_plano &lt;id&gt; &lt;plano&gt; &lt;dias&gt; — Concede plano\n"
+            "/retirar_plano &lt;id&gt; — Remove plano\n"
+            "/retirar_degustacao &lt;id&gt; — Remove degustação\n"
+            "/bloquear &lt;id&gt; — Bloqueia usuário\n\n"
+
+            "📋 <b>Enquetes</b>\n"
+            "/resultado — Último resultado\n"
+            "/resultado_detalhado — Detalhado\n"
+            "/listar_enquetes — Lista todas\n"
+            "/encerrar — Encerra ativa\n"
+            "/apagar_enquete — Apaga\n\n"
+
+            "📢 <b>Comunicação</b>\n"
+            "/aviso &lt;msg&gt; — Envia aviso\n"
+            "/broadcast — Envio em massa\n\n"
+
+            "⚙️ <b>Sistema</b>\n"
+            "/painel — Este painel\n"
+            "/admin — Idem\n"
+            "/menu_admin — Idem"
+        )
+
+        botoes = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Voltar ao painel", callback_data="admin_refresh")],
+        ])
+
+        await query.edit_message_text(texto, parse_mode="HTML", reply_markup=botoes)
+    except Exception as e:
+        logger.error(f"Erro em admin_cb_comandos: {e}")
+
+
+async def admin_cb_enq_resultado(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Roda /resultado direto."""
+    try:
+        from handler_enquete_local import comando_resultado
+        update.message = update.callback_query.message
+        await comando_resultado(update, context)
+    except Exception as e:
+        logger.error(f"Erro em admin_cb_enq_resultado: {e}")
+
+
+async def admin_cb_enq_detalhado(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Roda /resultado_detalhado direto."""
+    try:
+        from handler_enquete_local import comando_resultado_detalhado
+        update.message = update.callback_query.message
+        await comando_resultado_detalhado(update, context)
+    except Exception as e:
+        logger.error(f"Erro em admin_cb_enq_detalhado: {e}")
+
+
+async def admin_cb_enq_listar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Roda /listar_enquetes direto."""
+    try:
+        from handler_enquete_local import comando_listar_enquetes
+        update.message = update.callback_query.message
+        await comando_listar_enquetes(update, context)
+    except Exception as e:
+        logger.error(f"Erro em admin_cb_enq_listar: {e}")
+
+
+async def admin_cb_enq_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Info pra encerrar/apagar."""
+    try:
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text(
+            "🛑 <b>Encerrar/Apagar enquete</b>\n\n"
+            "Esses comandos precisam do ID da enquete:\n\n"
+            "/encerrar &lt;id&gt;\n"
+            "/apagar_enquete &lt;id&gt;\n\n"
+            "Use /listar_enquetes pra ver os IDs.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Voltar", callback_data="admin_enquetes")]
+            ]),
+        )
+    except Exception as e:
+        logger.error(f"Erro em admin_cb_enq_info: {e}")
 
 async def admin_cb_ver_todas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin clicou em 🔍 Verificar → dispara verificação de todas."""
@@ -1425,8 +1597,18 @@ conv_cadastro = ConversationHandler(
         CommandHandler("cadastrar_nova", iniciar_cadastro_manual),
         CallbackQueryHandler(iniciar_cadastro_manual, pattern="^cadastrar_nova$"),
     ],
-
+    
             states={
+        ETAPA_ESCOLHER_METODO: [
+            CallbackQueryHandler(callback_escolher_metodo, pattern="^(cad_foto|cad_manual)$")
+        ],
+        ETAPA_AGUARDANDO_FOTO: [
+            MessageHandler(filters.PHOTO, receber_foto),
+            CallbackQueryHandler(callback_escolher_metodo, pattern="^(cad_foto|cad_manual)$"),
+        ],
+        ETAPA_CONFIRMAR_OCR: [
+            CallbackQueryHandler(callback_confirmar_ocr, pattern="^(ocr_ok|ocr_manual)$")
+        ],
         ETAPA_ESCOLHER_SUS: [
             CallbackQueryHandler(callback_escolher_sus, pattern="^(usar_sus_|novo_sus)")
         ],
@@ -1444,9 +1626,9 @@ conv_cadastro = ConversationHandler(
         ETAPA_PROCEDIMENTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_procedimento)],
         ETAPA_LGPD: [CallbackQueryHandler(finalizar_cadastro, pattern="^(aceitar_lgpd|cancelar_cadastro)$")],
     },
-    fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
-    per_message=False,
-)
+        fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+        per_message=False,
+    )
 
 conv_corrigir = ConversationHandler(
     entry_points=[
@@ -2006,4 +2188,11 @@ __all__ = [
     "admin_cb_estatisticas",
     "admin_cb_ativos",
     "admin_cb_refresh",
+    "admin_cb_enquetes",
+    "admin_cb_usuarios",
+    "admin_cb_comandos",
+    "admin_cb_enq_resultado",
+    "admin_cb_enq_detalhado",
+    "admin_cb_enq_listar",
+    "admin_cb_enq_info",
 ]

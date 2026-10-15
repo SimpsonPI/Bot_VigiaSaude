@@ -46,6 +46,13 @@ from handler import (
     admin_cb_estatisticas,
     admin_cb_ativos,
     admin_cb_refresh,
+    admin_cb_enquetes,
+    admin_cb_usuarios,
+    admin_cb_comandos,
+    admin_cb_enq_resultado,
+    admin_cb_enq_detalhado,
+    admin_cb_enq_listar,
+    admin_cb_enq_info,
     comando_planos,
     comando_privacidade,
     comando_verificar_todas,
@@ -310,6 +317,13 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_cb_estatisticas, pattern="^painel_estatisticas$"))
     app.add_handler(CallbackQueryHandler(admin_cb_ativos, pattern="^painel_ativos$"))
     app.add_handler(CallbackQueryHandler(admin_cb_refresh, pattern="^admin_refresh$"))
+    app.add_handler(CallbackQueryHandler(admin_cb_enquetes, pattern="^admin_enquetes$"))
+    app.add_handler(CallbackQueryHandler(admin_cb_usuarios, pattern="^admin_usuarios$"))
+    app.add_handler(CallbackQueryHandler(admin_cb_comandos, pattern="^admin_comandos$"))
+    app.add_handler(CallbackQueryHandler(admin_cb_enq_resultado, pattern="^admin_enq_resultado$"))
+    app.add_handler(CallbackQueryHandler(admin_cb_enq_detalhado, pattern="^admin_enq_detalhado$"))
+    app.add_handler(CallbackQueryHandler(admin_cb_enq_listar, pattern="^admin_enq_listar$"))
+    app.add_handler(CallbackQueryHandler(admin_cb_enq_info, pattern="^admin_enq_info$"))
     app.add_handler(CallbackQueryHandler(callback_painel, pattern="^painel_"))  # ← por último
     app.add_handler(CommandHandler("estatisticas", comando_estatisticas))
     app.add_handler(CommandHandler("ativos", comando_listar_ativos))

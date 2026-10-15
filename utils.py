@@ -25,6 +25,9 @@ ETAPA_PROCEDIMENTO = 36
 ETAPA_LGPD = 37
 ETAPA_CONFIRMAR_REUSO = 99 
 ETAPA_ESCOLHER_SUS = 100
+ETAPA_AGUARDANDO_FOTO = 101
+ETAPA_CONFIRMAR_OCR = 102
+ETAPA_ESCOLHER_METODO = 103
 BROADCAST_ESCOLHER_SEGMENTO = 50
 BROADCAST_ENVIAR_CONTEUDO = 51
 BROADCAST_CONFIRMAR_ENVIO = 52
@@ -56,25 +59,31 @@ def formatar_maiusculo(texto: str) -> str:
 
 # Formatadores e utilitários
 def formatar_data(texto: str) -> str:
-    nums = re.sub(r"\D", "", texto)
-    if len(nums) == 8:
-        dia, mes, ano = nums[:2], nums[2:4], nums[4:]
+    """Aceita 12345678 ou 12/34/5678 e retorna YYYY-MM-DD. Vazio se invalida."""
+    import re as _re
+    from datetime import date
+    nums = _re.sub(r"\D", "", str(texto))
+    if len(nums) != 8:
+        return ""
+    dia, mes, ano = nums[:2], nums[2:4], nums[4:]
+    try:
+        d, m, a = int(dia), int(mes), int(ano)
+        if not (1 <= d <= 31 and 1 <= m <= 12 and 1900 <= a <= 2100):
+            return ""
+        date(a, m, d)
         return f"{ano}-{mes}-{dia}"
-    elif "/" in texto:
-        partes = texto.split("/")
-        if len(partes) == 3 and len(partes[2]) == 4:
-            return f"{partes[2]}-{partes[1].zfill(2)}-{partes[0].zfill(2)}"
-    return texto
+    except ValueError:
+        return ""
 
 def formatar_celular(texto: str) -> str:
-    nums = re.sub(r"\D", "", texto)
+    """Formata celular como XX XXXXX-XXXX (11) ou XX XXXX-XXXX (10)."""
+    import re as _re
+    nums = _re.sub(r"\D", "", str(texto))
     if len(nums) == 11:
-        ddd, d1, d2 = nums[:2], nums[2:7], nums[7:]
-        return f"({ddd}) {d1}-{d2}"
+        return f"{nums[:2]} {nums[2:7]}-{nums[7:]}"
     elif len(nums) == 10:
-        ddd, d1, d2 = nums[:2], nums[2:6], nums[6:]
-        return f"({ddd}) {d1}-{d2}"
-    return texto
+        return f"{nums[:2]} {nums[2:6]}-{nums[6:]}"
+    return str(texto).strip()
 
 def mascarar_nome(nome: str) -> str:
     if not nome or str(nome).strip().upper() in ["N/A", "NONE", "", "NULO"]:
