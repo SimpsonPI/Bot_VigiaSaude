@@ -1,5 +1,9 @@
 # handler_cadastro.py
 import re
+import logging
+from database import supabase
+# ... (resto dos imports)
+logger = logging.getLogger(__name__)
 from database import supabase
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
@@ -182,14 +186,12 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             dados_antigos = registros[0]
             context.user_data['_dados_reuso_pendente'] = {
                 'nome': dados_antigos.get('nome_paciente'),
-                'celular': dados_antigos.get('celular'),
                 'nascimento': dados_antigos.get('data_nascimento'),
                 'cbo': dados_antigos.get('cbo'),
                 'procedimento': dados_antigos.get('procedimento'),
             }
 
             nome = dados_antigos.get('nome_paciente') or "Não informado"
-            celular = dados_antigos.get('celular') or "Não informado"
             nasc = dados_antigos.get('data_nascimento') or "Não informado"
 
 
@@ -202,7 +204,6 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
                 f"🔍 <b>Cartão do SUS já cadastrado!</b>\n\n"
                 f"Encontramos os seguintes dados:\n"
                 f"👤 <b>Nome:</b> {nome}\n"
-                f"📱 <b>Celular:</b> {celular}\n"
                 f"📅 <b>Nascimento:</b> {nasc}\n\n"
                 f"Deseja usar esses dados?",
                 parse_mode="HTML",
@@ -619,11 +620,59 @@ async def callback_escolher_metodo(update: Update, context: ContextTypes.DEFAULT
 
     if query.data == "cad_foto":
         await query.edit_message_text(
-            "📷 <b>Envie a foto do comprovante de regulação.</b>\n\n"
+            "📸 <b>Envie a foto do comprovante de regulação.</b>\n\n"
             "<i>Certifique-se de que o número da regulação e o cartão SUS estejam legíveis.</i>",
             parse_mode="HTML",
         )
         return ETAPA_AGUARDANDO_FOTO
+
+    # fluxo manual
+    try:
+        # CORRIGIDO: Removido o 'celular' da busca para não dar erro no Supabase
+        res_sus = supabase.table("AlertaSUS_2.0").select(
+            "numero_sus, nome_paciente, data_nascimento"
+        ).eq("chat_id", user_id).order("id", desc=True).execute()
+        registros = res_sus.data or []
+    except Exception as e:
+        logger.error(f"Erro ao buscar SUS: {e}")
+        registros = []
+
+    # CORRIGIDO: Adicionado o loop 'for' que estava faltando
+    sus_unicos = {}
+    for r in registros:
+        num = r.get("numero_sus")
+        if num and num not in sus_unicos:
+            sus_unicos[num] = r
+            
+    sus_lista = list(sus_unicos.items())
+
+    if not sus_lista:
+        await query.edit_message_text(
+            "📝 <b>Cadastro manual</b>\n\nDigite o <b>número do Cartão SUS</b> do paciente (15 dígitos):",
+            parse_mode="HTML"
+        )
+        return ETAPA_SUS
+
+    # Monta a tela com os botões (igual à imagem)
+    botoes = []
+    for num, dados in sus_lista:
+        nome = dados.get("nome_paciente") or "Sem nome"
+        # Corta o nome se for muito grande para o botão não quebrar
+        nome_curto = nome[:20] + "..." if len(nome) > 20 else nome
+        botoes.append([InlineKeyboardButton(f"💳 {num} · {nome_curto}", callback_data=f"usar_sus_{num}")])
+        
+    botoes.append([InlineKeyboardButton("➕ Cadastrar novo SUS", callback_data="novo_sus")])
+    botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")])
+
+    teclado = InlineKeyboardMarkup(botoes)
+
+    await query.edit_message_text(
+        "📝 <b>Iniciando cadastro de nova regulação.</b>\n\n"
+        "Selecione qual Cartão do SUS deseja usar:",
+        parse_mode="HTML",
+        reply_markup=teclado
+    )
+    return ETAPA_ESCOLHER_SUS
 
     # cad_manual — fluxo antigo
     try:
@@ -645,7 +694,7 @@ async def callback_escolher_metodo(update: Update, context: ContextTypes.DEFAULT
     if not sus_lista:
         await query.edit_message_text(
             "📝 <b>Cadastro manual</b>\n\nDigite o <b>número do Cartão SUS</b> do paciente (15 dígitos):",
-            parse_mode="HTML",
+            parse_mode="HTML"
         )
         return ETAPA_SUS
 
