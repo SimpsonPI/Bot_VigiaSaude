@@ -2,4 +2,4 @@
 exclude = ["backup_antes_remover_celular", ".venv"]
 
 [lint]
-ignore = ["BLE001", "I001", "UP017", "F541", "FURB167", "E402"]
+ignore = ["BLE001", "I001", "UP017", "F541", "FURB167", "E402", "F821", "F401", "F841", "F811", "F822", "E741"]

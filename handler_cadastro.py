@@ -1,4 +1,8 @@
 # handler_cadastro.py
+import os
+import logging
+
+logger = logging.getLogger(__name__)
 import re
 import logging
 from database import supabase
@@ -335,11 +339,26 @@ async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if context.user_data.get("_origem_ocr"):
         return await _enviar_termo_lgpd(update, context)
 
-    # Fluxo normal
-    await update.message.reply_text(
-        "Agora, por favor, digite o <b>Numero da Regulacao</b>:",
-        parse_mode="HTML",
-    )
+        # Fluxo normal
+        texto_id = (
+            "✅ <b>Dados registrados.</b>\n\n"
+            "⚠️ <b>PRÓXIMO PASSO: ID da Regulação</b>\n\n"
+            "Antes de digitar, tenha em mãos o seu <b>comprovante de agendamento</b> e confira:\n"
+            "✅ O ID correto no papel\n"
+            "✅ Se os <b>8 dígitos</b> conferem\n\n"
+            "🆔 <b>Digite o ID da Regulação:</b>"
+        )
+
+    caminho_imagem = os.path.join(os.path.dirname(__file__), "comprovante_sus.jpg")
+    try:
+        with open(caminho_imagem, "rb") as foto:
+            await update.message.reply_photo(photo=foto, caption=texto_id, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Erro ao enviar imagem: {e}")
+        await update.message.reply_text(
+            texto_id + "\n\n(Imagem ilustrativa indisponível no momento)", parse_mode="HTML"
+        )
+
     return ETAPA_REGULACAO
 
 
@@ -630,6 +649,10 @@ async def _enviar_termo_lgpd(update, context):
     return ETAPA_LGPD
 
 
+from bot_seguranca import safe_callback
+
+
+@safe_callback
 async def callback_escolher_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Processa a escolha do SUS no início do cadastro."""
     query = update.callback_query
@@ -671,13 +694,32 @@ async def callback_escolher_sus(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data["nome"] = dados.get("nome_paciente") or ""
         context.user_data["nascimento"] = dados.get("data_nascimento") or ""
 
-        await query.edit_message_text(
+        texto_id = (
             f"✅ <b>SUS carregado:</b> <code>{num_sus}</code>\n\n"
             f"👤 <b>Paciente:</b> {dados.get('nome_paciente') or '—'}\n"
             f"📅 <b>Nascimento:</b> {dados.get('data_nascimento') or '—'}\n\n"
-            "Agora digite o <b>ID da Regulação</b> (8 dígitos):",
-            parse_mode="HTML",
+            "🆔 <b>Agora digite o ID da Regulação (8 dígitos):</b>"
         )
+
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+        caminho_imagem = os.path.join(os.path.dirname(__file__), "comprovante_sus.jpg")
+        try:
+            with open(caminho_imagem, "rb") as foto:
+                await context.bot.send_photo(
+                    chat_id=update.effective_chat.id, photo=foto, caption=texto_id, parse_mode="HTML"
+                )
+        except Exception as e:
+            logger.error(f"Erro ao enviar imagem: {e}")
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=texto_id + "\n\n(Imagem ilustrativa indisponível no momento)",
+                parse_mode="HTML",
+            )
+
         return ETAPA_REGULACAO
 
     return ConversationHandler.END

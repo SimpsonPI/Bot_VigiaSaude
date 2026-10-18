@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+from bot_seguranca import global_error_handler
 from handler_broadcast import conv_broadcast
 from admin_panel import comando_painel, callback_painel
 
@@ -402,6 +403,7 @@ def main():
     threading.Thread(target=run_http_server, args=(PORT,), daemon=True).start()
 
     logger.info("Iniciando o bot VigiaSaude via polling...")
+    app.add_error_handler(global_error_handler)
     app.run_polling(drop_pending_updates=True)
 
 
