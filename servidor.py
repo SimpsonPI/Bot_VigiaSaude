@@ -9,6 +9,7 @@ Uso:
     python servidor.py status     → mostra se está rodando
     python servidor.py logs       → mostra últimas linhas do log
 """
+
 import os
 import sys
 import time
@@ -25,6 +26,7 @@ PYTHON_EXE = r"C:\Users\User\AppData\Local\Python\pythoncore-3.14-64\python.exe"
 
 
 # ─── Funções auxiliares ───
+
 
 def _ler_pid() -> int | None:
     """Lê o PID salvo (se existir)."""
@@ -44,12 +46,12 @@ def _esta_rodando(pid: int | None) -> bool:
         if sys.platform == "win32":
             # Usa CIM pra pegar a linha de comando do processo
             cmd = [
-                "powershell", "-NoProfile", "-Command",
-                f"(Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\").CommandLine"
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                f'(Get-CimInstance Win32_Process -Filter "ProcessId={pid}").CommandLine',
             ]
-            output = subprocess.check_output(
-                cmd, stderr=subprocess.DEVNULL, text=True, timeout=5
-            ).strip()
+            output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, timeout=5).strip()
             if not output:
                 return False
             # Só considera rodando se a linha de comando mencionar main.py
@@ -89,16 +91,17 @@ def _limpar_pid():
 
 # ─── Comandos ───
 
+
 def start():
     """Inicia o bot em background."""
     pid = _ler_pid()
-    
+
     # 🧹 Limpa PID órfão automaticamente
     if pid and not _esta_rodando(pid):
         print(f"🧹 Limpando PID órfão ({pid})...")
         _limpar_pid()
         pid = None
-    
+
     if _esta_rodando(pid):
         print(f"⚠️  O bot JÁ ESTÁ rodando (PID {pid}).")
         print(f"   Use: python servidor.py status")
@@ -235,6 +238,7 @@ Comandos disponíveis:
 
 
 # ─── Entry point ───
+
 
 def main():
     if len(sys.argv) < 2:

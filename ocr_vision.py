@@ -2,6 +2,7 @@
 OCR de comprovante de regulacao via Google Gemini.
 Extrai: numero_reg, numero_sus, nome_paciente, cbo, procedimento.
 """
+
 import os
 import asyncio
 import base64
@@ -13,7 +14,11 @@ import httpx
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-flash-lite-latest"]
+GEMINI_MODELS = [
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-flash-lite-latest",
+]
 GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 PROMPT = """Voce recebe a foto de um comprovante de solicitacao de regulacao do SUS (FMS Teresina).
@@ -82,10 +87,10 @@ async def extrair_dados_comprovante(imagem_bytes: bytes, mimetype: str = "image/
                     if r.status_code == 200:
                         data = r.json()
                         conteudo = data["candidates"][0]["content"]["parts"][0]["text"]
-                        logger.info(f"Gemini OK: {modelo} (tentativa {tentativa+1})")
+                        logger.info(f"Gemini OK: {modelo} (tentativa {tentativa + 1})")
                         break
                     elif r.status_code == 503:
-                        logger.warning(f"Gemini {modelo} 503 (tentativa {tentativa+1})")
+                        logger.warning(f"Gemini {modelo} 503 (tentativa {tentativa + 1})")
                         ultimo_erro = "503 sobrecarregado"
                         if tentativa == 0:
                             await asyncio.sleep(3)

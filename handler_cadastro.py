@@ -2,23 +2,38 @@
 import re
 import logging
 from database import supabase
+
 # ... (resto dos imports)
 logger = logging.getLogger(__name__)
-from database import supabase
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
-from database import salvar_regulacao, registrar_consentimento_lgpd, supabase
+from database import salvar_regulacao, registrar_consentimento_lgpd
 from utils import (
-    DISCLAIMER_TEXTO, TECLADO_MENU, TECLADO_CANCELAR,
-    ETAPA_SUS, ETAPA_NOME, ETAPA_CELULAR, ETAPA_NASCIMENTO,
-    ETAPA_REGULACAO, ETAPA_CBO, ETAPA_PROCEDIMENTO, ETAPA_LGPD,
-    ETAPA_CONFIRMAR_REUSO, ETAPA_ESCOLHER_SUS,
-    ETAPA_AGUARDANDO_FOTO, ETAPA_CONFIRMAR_OCR, ETAPA_ESCOLHER_METODO,
-    formatar_data, formatar_celular, formatar_maiusculo, verificar_se_e_menu_e_executar
+    DISCLAIMER_TEXTO,
+    TECLADO_MENU,
+    ETAPA_SUS,
+    ETAPA_NOME,
+    ETAPA_CELULAR,
+    ETAPA_NASCIMENTO,
+    ETAPA_REGULACAO,
+    ETAPA_CBO,
+    ETAPA_PROCEDIMENTO,
+    ETAPA_LGPD,
+    ETAPA_CONFIRMAR_REUSO,
+    ETAPA_ESCOLHER_SUS,
+    ETAPA_AGUARDANDO_FOTO,
+    ETAPA_CONFIRMAR_OCR,
+    ETAPA_ESCOLHER_METODO,
+    formatar_data,
+    formatar_celular,
+    formatar_maiusculo,
+    verificar_se_e_menu_e_executar,
 )
 
+
 async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
     nome = update.message.text.strip()
     # 🔒 Sanitização: remove tags HTML e limita tamanho
     nome = nome.replace("<", "").replace(">", "").replace("&", "&amp;")[:80]
@@ -26,20 +41,29 @@ async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await update.message.reply_text("Digite o número de <b>celular/WhatsApp</b> (com DDD):", parse_mode="HTML")
     return ETAPA_CELULAR
 
+
 async def receber_celular(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
-    context.user_data["celular"] = formatar_celular(update.message.text)[cite: 2]
-    await update.message.reply_text("Digite a <b>data de nascimento</b> do paciente (DD/MM/AAAA):", parse_mode="HTML")
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
+    context.user_data["celular"] = formatar_celular(update.message.text)
+    await update.message.reply_text(
+        "Digite a <b>data de nascimento</b> do paciente (DD/MM/AAAA):",
+        parse_mode="HTML",
+    )
     return ETAPA_NASCIMENTO
 
+
 async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
-    context.user_data["nascimento"] = formatar_data(update.message.text)[cite: 2]
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
+    context.user_data["nascimento"] = formatar_data(update.message.text)
     await update.message.reply_text("Agora, por favor, digite o <b>Número da Regulação</b>:", parse_mode="HTML")
     return ETAPA_REGULACAO
 
+
 async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
     cbo = update.message.text.strip()
     # 🔒 Sanitização
     cbo = cbo.replace("<", "").replace(">", "").replace("&", "&amp;")[:80]
@@ -48,12 +72,15 @@ async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     await update.message.reply_text("Qual a descrição do <b>Procedimento/Exame</b>?", parse_mode="HTML")
     return ETAPA_PROCEDIMENTO
 
+
 async def receber_procedimento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
     procedimento = update.message.text.strip()
     # 🔒 Sanitização
     procedimento = procedimento.replace("<", "").replace(">", "").replace("&", "&amp;")[:80]
     context.user_data["procedimento"] = procedimento
+
 
 async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     from handler import (
@@ -64,15 +91,19 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
     )
     from database import supabase, iniciar_degustacao
     import logging
+
     logger = logging.getLogger(__name__)
 
     user_id = update.effective_user.id
 
     # 1. Verifica se tem registro de assinatura
     try:
-        res = supabase.table("assinaturas").select(
-            "tipo_plano, status, usou_degustacao, limite_ids"
-        ).eq("chat_id", str(user_id)).execute()
+        res = (
+            supabase.table("assinaturas")
+            .select("tipo_plano, status, usou_degustacao, limite_ids")
+            .eq("chat_id", str(user_id))
+            .execute()
+        )
         tem_registro = bool(res.data)
         info = res.data[0] if res.data else {}
         usou_degustacao = info.get("usou_degustacao", False)
@@ -88,9 +119,12 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
             await iniciar_degustacao(user_id)
             logger.info(f"🎁 Degustação ativada automaticamente para novo usuário {user_id}")
             # Recarrega o info
-            res = supabase.table("assinaturas").select(
-                "tipo_plano, status, limite_ids"
-            ).eq("chat_id", str(user_id)).execute()
+            res = (
+                supabase.table("assinaturas")
+                .select("tipo_plano, status, limite_ids")
+                .eq("chat_id", str(user_id))
+                .execute()
+            )
             info = res.data[0] if res.data else {}
         except Exception as e:
             logger.error(f"Erro ao ativar degustação: {e}")
@@ -115,7 +149,11 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
     # 4. Verifica LIMITE de regulações
     try:
         res_count = supabase.table("AlertaSUS_2.0").select("id", count="exact").eq("chat_id", user_id).execute()
-        total_regs = res_count.count if hasattr(res_count, "count") and res_count.count is not None else len(res_count.data or [])
+        total_regs = (
+            res_count.count
+            if hasattr(res_count, "count") and res_count.count is not None
+            else len(res_count.data or [])
+        )
     except Exception as e:
         logger.error(f"Erro ao contar regulações: {e}")
         total_regs = 0
@@ -123,6 +161,7 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
         # Cortesia = acesso ilimitado, nunca bloqueia
     # Cortesia e admin = acesso ilimitado
     from config import is_admin
+
     tipo_atual = str(info.get("tipo_plano") or "").lower()
     if is_admin(user_id) or "cortesia" in tipo_atual or "admin" in tipo_atual:
         limite = 999
@@ -141,23 +180,28 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
     context.user_data["_limite"] = limite
     context.user_data["_user_id"] = user_id
 
-    teclado = InlineKeyboardMarkup([
-        [InlineKeyboardButton("\U0001f4f7 Enviar foto do comprovante", callback_data="cad_foto")],
-        [InlineKeyboardButton("\u2328\ufe0f Digitar manualmente", callback_data="cad_manual")],
-        [InlineKeyboardButton("\u274c Cancelar", callback_data="iniciar")],
-    ])
+    teclado = InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("\U0001f4f7 Enviar foto do comprovante", callback_data="cad_foto")],
+            [InlineKeyboardButton("\u2328\ufe0f Digitar manualmente", callback_data="cad_manual")],
+            [InlineKeyboardButton("\u274c Cancelar", callback_data="iniciar")],
+        ]
+    )
     await update.message.reply_text(
         "\U0001f4dd <b>Iniciando cadastro de nova regula\u00e7\u00e3o.</b>\n\n"
         f"Voc\u00ea tem <b>{total_regs}/{limite}</b> regula\u00e7\u00f5es monitoradas.\n\n"
         "Como deseja preencher os dados?\n\n"
         "\U0001f4f7 <b>Enviar foto</b> - a IA extrai os dados automaticamente\n"
         "\u2328\ufe0f <b>Digitar manualmente</b> - voc\u00ea informa os dados",
-        parse_mode="HTML", reply_markup=teclado
+        parse_mode="HTML",
+        reply_markup=teclado,
     )
     return ETAPA_ESCOLHER_METODO
 
+
 async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
     import re as _re
 
     chat_id = update.effective_chat.id
@@ -168,37 +212,40 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     if not numero_sus:
         await update.message.reply_text(
-            "⚠️ Não consegui identificar nenhum dígito.\n\n"
-            "Digite o número do Cartão SUS (apenas números):"
+            "⚠️ Não consegui identificar nenhum dígito.\n\n" "Digite o número do Cartão SUS (apenas números):"
         )
         return ETAPA_SUS
 
-    context.user_data['sus'] = numero_sus
+    context.user_data["sus"] = numero_sus
 
     try:
-
-        resposta = supabase.table("AlertaSUS_2.0").select("*").eq(
-            "numero_sus", numero_sus
-        ).eq("chat_id", str(chat_id)).execute()
+        resposta = (
+            supabase.table("AlertaSUS_2.0")
+            .select("*")
+            .eq("numero_sus", numero_sus)
+            .eq("chat_id", str(chat_id))
+            .execute()
+        )
         registros = resposta.data
 
         if registros and len(registros) > 0:
             dados_antigos = registros[0]
-            context.user_data['_dados_reuso_pendente'] = {
-                'nome': dados_antigos.get('nome_paciente'),
-                'nascimento': dados_antigos.get('data_nascimento'),
-                'cbo': dados_antigos.get('cbo'),
-                'procedimento': dados_antigos.get('procedimento'),
+            context.user_data["_dados_reuso_pendente"] = {
+                "nome": dados_antigos.get("nome_paciente"),
+                "nascimento": dados_antigos.get("data_nascimento"),
+                "cbo": dados_antigos.get("cbo"),
+                "procedimento": dados_antigos.get("procedimento"),
             }
 
-            nome = dados_antigos.get('nome_paciente') or "Não informado"
-            nasc = dados_antigos.get('data_nascimento') or "Não informado"
+            nome = dados_antigos.get("nome_paciente") or "Não informado"
+            nasc = dados_antigos.get("data_nascimento") or "Não informado"
 
-
-            teclado = InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ Usar esses dados", callback_data="reuso_sim")],
-                [InlineKeyboardButton("🔄 Digitar do zero", callback_data="reuso_nao")],
-            ])
+            teclado = InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("✅ Usar esses dados", callback_data="reuso_sim")],
+                    [InlineKeyboardButton("🔄 Digitar do zero", callback_data="reuso_nao")],
+                ]
+            )
 
             await update.message.reply_text(
                 f"🔍 <b>Cartão do SUS já cadastrado!</b>\n\n"
@@ -217,54 +264,62 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     await update.message.reply_text("Qual o nome completo do paciente?")
     return ETAPA_NOME
 
+
 async def callback_reuso_dados(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Processa a escolha do usuário: reusar dados ou digitar do zero."""
     query = update.callback_query
     await query.answer()
 
-    dados = context.user_data.get('_dados_reuso_pendente') or {}
+    dados = context.user_data.get("_dados_reuso_pendente") or {}
 
     if query.data == "reuso_sim":
-        context.user_data['nome'] = dados.get('nome')
-        context.user_data['celular'] = dados.get('celular')
-        context.user_data['nascimento'] = dados.get('nascimento')
-        context.user_data['cbo'] = dados.get('cbo')
-        context.user_data['procedimento'] = dados.get('procedimento')
+        context.user_data["nome"] = dados.get("nome")
+        context.user_data["celular"] = dados.get("celular")
+        context.user_data["nascimento"] = dados.get("nascimento")
+        context.user_data["cbo"] = dados.get("cbo")
+        context.user_data["procedimento"] = dados.get("procedimento")
 
         await query.edit_message_text(
-            "✅ <b>Dados carregados com sucesso!</b>\n\n"
-            "Agora digite apenas o <b>Número da Regulação</b>:",
+            "✅ <b>Dados carregados com sucesso!</b>\n\n" "Agora digite apenas o <b>Número da Regulação</b>:",
             parse_mode="HTML",
         )
         return ETAPA_REGULACAO
 
     else:
-        for campo in ('nome', 'celular', 'nascimento', 'cbo', 'procedimento'):
+        for campo in ("nome", "celular", "nascimento", "cbo", "procedimento"):
             context.user_data[campo] = None
-        context.user_data.pop('_dados_reuso_pendente', None)
+        context.user_data.pop("_dados_reuso_pendente", None)
 
         await query.edit_message_text(
-            "Ok! Vamos começar do zero.\n\n"
-            "👤 Qual o <b>nome completo do paciente</b>?",
+            "Ok! Vamos começar do zero.\n\n👤 Qual o <b>nome completo do paciente</b>?",
             parse_mode="HTML",
         )
         return ETAPA_NOME
 
+
 async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
     context.user_data["nome"] = update.message.text.strip()
     await update.message.reply_text("Digite o número de <b>celular/WhatsApp</b> (com DDD):", parse_mode="HTML")
     return ETAPA_CELULAR
 
+
 async def receber_celular(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
     celular = formatar_celular(update.message.text.strip())
     context.user_data["celular"] = celular
-    await update.message.reply_text("Digite a <b>data de nascimento</b> do paciente (DD/MM/AAAA):", parse_mode="HTML")
+    await update.message.reply_text(
+        "Digite a <b>data de nascimento</b> do paciente (DD/MM/AAAA):",
+        parse_mode="HTML",
+    )
     return ETAPA_NASCIMENTO
 
+
 async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
     nascimento = formatar_data(update.message.text.strip())
 
     if not nascimento:
@@ -287,14 +342,14 @@ async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
     return ETAPA_REGULACAO
 
+
 async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
     num_reg = re.sub(r"\D", "", update.message.text)
 
     if not num_reg:
-        await update.message.reply_text(
-            "⚠️ Digite um número de regulação válido (apenas dígitos):"
-        )
+        await update.message.reply_text("⚠️ Digite um número de regulação válido (apenas dígitos):")
         return ETAPA_REGULACAO
 
     # ✅ Validação: ID da regulação tem 8 dígitos
@@ -311,8 +366,9 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     # ✅ Rate limit de cadastros (5/dia)
     from mitigacao_cadastro import pode_cadastrar, registrar_cadastro
+
     chat_id = str(update.effective_user.id)
-    pode, motivo, restantes = pode_cadastrar(chat_id)
+    pode, _motivo, _restantes = pode_cadastrar(chat_id)
     if not pode:
         await update.message.reply_text(
             "⏳ <b>Limite diário de cadastros atingido!</b>\n\n"
@@ -326,14 +382,10 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # ✅ Verifica duplicata global (mesmo usuário ou outro)
     try:
         chat_id_int = int(chat_id) if chat_id.isdigit() else chat_id
-        res_dup = supabase.table("AlertaSUS_2.0").select("id, chat_id").eq(
-            "numero_reg", num_reg
-        ).execute()
+        res_dup = supabase.table("AlertaSUS_2.0").select("id, chat_id").eq("numero_reg", num_reg).execute()
 
         if res_dup.data:
-            mesmo_usuario = any(
-                str(r.get("chat_id")) == str(chat_id_int) for r in res_dup.data
-            )
+            mesmo_usuario = any(str(r.get("chat_id")) == str(chat_id_int) for r in res_dup.data)
             if mesmo_usuario:
                 await update.message.reply_text(
                     f"⚠️ <b>Você já cadastrou a regulação {num_reg}!</b>\n\n"
@@ -387,11 +439,13 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
     return ETAPA_CBO
 
+
 async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
-    
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
+
     valor = update.message.text.strip()
-    
+
     if valor == "0":
         context.user_data["cbo"] = ""
         await update.message.reply_text(
@@ -401,9 +455,9 @@ async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             parse_mode="HTML",
         )
         return ETAPA_PROCEDIMENTO
-    
+
     context.user_data["cbo"] = formatar_maiusculo(valor)
-    
+
     await update.message.reply_text(
         f"✅ <b>Especialidade registrada:</b> {formatar_maiusculo(valor)}\n\n"
         "Agora informe a <b>descrição do Procedimento/Exame</b>:\n"
@@ -412,22 +466,28 @@ async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     )
     return ETAPA_PROCEDIMENTO
 
+
 async def receber_procedimento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context): return ConversationHandler.END
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
     context.user_data["procedimento"] = update.message.text.strip()
 
-    teclado_lgpd = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Aceitar e Finalizar", callback_data="aceitar_lgpd")],
-        [InlineKeyboardButton("❌ Cancelar Cadastro", callback_data="cancelar_cadastro")]
-    ])
+    teclado_lgpd = InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("✅ Aceitar e Finalizar", callback_data="aceitar_lgpd")],
+            [InlineKeyboardButton("❌ Cancelar Cadastro", callback_data="cancelar_cadastro")],
+        ]
+    )
 
     await update.message.reply_text(
         "🛡️ <b>TERMO DE CONSENTIMENTO LGPD</b>\n\n"
         "Para prosseguir com o monitoramento automático, autorizo o armazenamento dos dados fornecidos exclusivamente para finalidades de consulta pública no sistema FMS Piauí.\n\n"
         f"{DISCLAIMER_TEXTO}\n\nVocê aceita o termo?",
-        parse_mode="HTML", reply_markup=teclado_lgpd
+        parse_mode="HTML",
+        reply_markup=teclado_lgpd,
     )
     return ETAPA_LGPD
+
 
 async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -442,7 +502,11 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.message.delete()
         except Exception:
             pass
-        await context.bot.send_message(chat_id=chat_id, text="❌ Cadastro cancelado pelo usuário.", reply_markup=TECLADO_MENU)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="❌ Cadastro cancelado pelo usuário.",
+            reply_markup=TECLADO_MENU,
+        )
         context.user_data.clear()
         context.user_data.pop("_em_fluxo_admin", None)
         return ConversationHandler.END
@@ -455,7 +519,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "data_nascimento": dados.get("nascimento"),
         "numero_reg": dados.get("numero_regulacao"),
         "cbo": dados.get("cbo"),
-        "procedimento": dados.get("procedimento")
+        "procedimento": dados.get("procedimento"),
     }
     # 🛡️ Prevenção de duplicata: mesmo chat_id + numero_reg
     numero_reg_novo = dados_salvar.get("numero_reg")
@@ -521,20 +585,17 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await context.bot.send_message(
         chat_id=chat_id,
         text="✅ <b>Regulação cadastrada com sucesso!</b>\nEla será monitorada automaticamente pelo sistema.",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
-        # 3. Envia o Menu Principal
+    # 3. Envia o Menu Principal
     print("DEBUG 7: Enviando menu principal...")
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text="O que deseja fazer agora?",
-        reply_markup=TECLADO_MENU
-    )
+    await context.bot.send_message(chat_id=chat_id, text="O que deseja fazer agora?", reply_markup=TECLADO_MENU)
 
     # 4. Marketing: oferta pós-1ª regulação
     try:
         from handler import enviar_oferta_primeira_regulacao
+
         await enviar_oferta_primeira_regulacao(update, context, str(user_id))
     except Exception as e:
         print(f"DEBUG MARKETING: {e}")
@@ -548,19 +609,23 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # FUNÇÕES DE OCR E LGPD (adicionadas 2026-10-15)
 # ═══════════════════════════════════════════════
 
+
 async def _enviar_termo_lgpd(update, context):
     """Envia o Termo de Consentimento LGPD com botões."""
-    teclado_lgpd = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Aceitar e Finalizar", callback_data="aceitar_lgpd")],
-        [InlineKeyboardButton("❌ Cancelar Cadastro", callback_data="cancelar_cadastro")]
-    ])
+    teclado_lgpd = InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("✅ Aceitar e Finalizar", callback_data="aceitar_lgpd")],
+            [InlineKeyboardButton("❌ Cancelar Cadastro", callback_data="cancelar_cadastro")],
+        ]
+    )
     await update.message.reply_text(
         "🛡️ <b>TERMO DE CONSENTIMENTO LGPD</b>\n\n"
         "Para prosseguir com o monitoramento automático, autorizo o armazenamento "
         "dos dados fornecidos exclusivamente para finalidades de consulta pública "
         "no sistema FMS Piauí.\n\n"
         f"{DISCLAIMER_TEXTO}\n\nVocê aceita o termo?",
-        parse_mode="HTML", reply_markup=teclado_lgpd
+        parse_mode="HTML",
+        reply_markup=teclado_lgpd,
     )
     return ETAPA_LGPD
 
@@ -571,8 +636,13 @@ async def callback_escolher_sus(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
     data = query.data
 
+    if data == "cancelar":
+        await query.edit_message_text("❌ Cadastro cancelado.")
+        context.user_data.clear()
+        return ConversationHandler.END
+
     if data == "novo_sus":
-        for k in ("sus", "nome", "celular", "nascimento"):
+        for k in ("sus", "nome", "nascimento"):
             context.user_data.pop(k, None)
         await query.edit_message_text(
             "Ok! Digite o <b>número do Cartão SUS</b> do paciente (15 dígitos):",
@@ -583,11 +653,15 @@ async def callback_escolher_sus(update: Update, context: ContextTypes.DEFAULT_TY
     if data.startswith("usar_sus_"):
         num_sus = data.replace("usar_sus_", "")
         try:
-            res = supabase.table("AlertaSUS_2.0").select(
-                "nome_paciente, celular, data_nascimento"
-            ).eq("chat_id", update.effective_user.id).eq(
-                "numero_sus", num_sus
-            ).order("id", desc=True).limit(1).execute()
+            res = (
+                supabase.table("AlertaSUS_2.0")
+                .select("nome_paciente, data_nascimento")
+                .eq("chat_id", update.effective_user.id)
+                .eq("numero_sus", num_sus)
+                .order("id", desc=True)
+                .limit(1)
+                .execute()
+            )
             dados = res.data[0] if res.data else {}
         except Exception as e:
             logger.error(f"Erro ao buscar dados do SUS: {e}")
@@ -595,24 +669,23 @@ async def callback_escolher_sus(update: Update, context: ContextTypes.DEFAULT_TY
 
         context.user_data["sus"] = num_sus
         context.user_data["nome"] = dados.get("nome_paciente") or ""
-        context.user_data["celular"] = dados.get("celular") or ""
         context.user_data["nascimento"] = dados.get("data_nascimento") or ""
 
         await query.edit_message_text(
             f"✅ <b>SUS carregado:</b> <code>{num_sus}</code>\n\n"
             f"👤 <b>Paciente:</b> {dados.get('nome_paciente') or '—'}\n"
-            f"📱 <b>Celular:</b> {dados.get('celular') or '—'}\n"
             f"📅 <b>Nascimento:</b> {dados.get('data_nascimento') or '—'}\n\n"
             "Agora digite o <b>ID da Regulação</b> (8 dígitos):",
             parse_mode="HTML",
         )
         return ETAPA_REGULACAO
 
-    return ETAPA_ESCOLHER_SUS
+    return ConversationHandler.END
 
 
 async def callback_escolher_metodo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Processa a escolha: foto ou manual."""
+    print("🔴 CLIQUE RECEBIDO NO BOTÃO MANUAL!", flush=True)
     query = update.callback_query
     await query.answer()
 
@@ -629,9 +702,13 @@ async def callback_escolher_metodo(update: Update, context: ContextTypes.DEFAULT
     # fluxo manual
     try:
         # CORRIGIDO: Removido o 'celular' da busca para não dar erro no Supabase
-        res_sus = supabase.table("AlertaSUS_2.0").select(
-            "numero_sus, nome_paciente, data_nascimento"
-        ).eq("chat_id", user_id).order("id", desc=True).execute()
+        res_sus = (
+            supabase.table("AlertaSUS_2.0")
+            .select("numero_sus, nome_paciente, data_nascimento")
+            .eq("chat_id", user_id)
+            .order("id", desc=True)
+            .execute()
+        )
         registros = res_sus.data or []
     except Exception as e:
         logger.error(f"Erro ao buscar SUS: {e}")
@@ -643,13 +720,13 @@ async def callback_escolher_metodo(update: Update, context: ContextTypes.DEFAULT
         num = r.get("numero_sus")
         if num and num not in sus_unicos:
             sus_unicos[num] = r
-            
+
     sus_lista = list(sus_unicos.items())
 
     if not sus_lista:
         await query.edit_message_text(
             "📝 <b>Cadastro manual</b>\n\nDigite o <b>número do Cartão SUS</b> do paciente (15 dígitos):",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         return ETAPA_SUS
 
@@ -660,25 +737,28 @@ async def callback_escolher_metodo(update: Update, context: ContextTypes.DEFAULT
         # Corta o nome se for muito grande para o botão não quebrar
         nome_curto = nome[:20] + "..." if len(nome) > 20 else nome
         botoes.append([InlineKeyboardButton(f"💳 {num} · {nome_curto}", callback_data=f"usar_sus_{num}")])
-        
+
     botoes.append([InlineKeyboardButton("➕ Cadastrar novo SUS", callback_data="novo_sus")])
     botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar")])
 
     teclado = InlineKeyboardMarkup(botoes)
 
     await query.edit_message_text(
-        "📝 <b>Iniciando cadastro de nova regulação.</b>\n\n"
-        "Selecione qual Cartão do SUS deseja usar:",
+        "📝 <b>Iniciando cadastro de nova regulação.</b>\n\n" "Selecione qual Cartão do SUS deseja usar:",
         parse_mode="HTML",
-        reply_markup=teclado
+        reply_markup=teclado,
     )
     return ETAPA_ESCOLHER_SUS
 
     # cad_manual — fluxo antigo
     try:
-        res_sus = supabase.table("AlertaSUS_2.0").select(
-            "numero_sus, nome_paciente, celular, data_nascimento"
-        ).eq("chat_id", user_id).order("id", desc=True).execute()
+        res_sus = (
+            supabase.table("AlertaSUS_2.0")
+            .select("numero_sus, nome_paciente, celular, data_nascimento")
+            .eq("chat_id", user_id)
+            .order("id", desc=True)
+            .execute()
+        )
         registros = res_sus.data or []
     except Exception as e:
         logger.error(f"Erro ao buscar SUS: {e}")
@@ -694,34 +774,36 @@ async def callback_escolher_metodo(update: Update, context: ContextTypes.DEFAULT
     if not sus_lista:
         await query.edit_message_text(
             "📝 <b>Cadastro manual</b>\n\nDigite o <b>número do Cartão SUS</b> do paciente (15 dígitos):",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         return ETAPA_SUS
 
     if len(sus_lista) == 1:
         num, dados = sus_lista[0]
         nome = dados.get("nome_paciente") or "—"
-        teclado = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Usar mesmo Cartão do SUS", callback_data=f"usar_sus_{num}")],
-            [InlineKeyboardButton("🔄 Cadastrar novo SUS", callback_data="novo_sus")],
-            [InlineKeyboardButton("❌ Cancelar", callback_data="iniciar")],
-        ])
+        teclado = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("✅ Usar mesmo Cartão do SUS", callback_data=f"usar_sus_{num}")],
+                [InlineKeyboardButton("🔄 Cadastrar novo SUS", callback_data="novo_sus")],
+                [InlineKeyboardButton("❌ Cancelar", callback_data="iniciar")],
+            ]
+        )
         await query.edit_message_text(
             f"💳 Detectei um Cartão do SUS cadastrado:\n<code>{num}</code> · {nome}\n\nDeseja usar o mesmo?",
-            parse_mode="HTML", reply_markup=teclado
+            parse_mode="HTML",
+            reply_markup=teclado,
         )
     else:
         botoes = []
         for num, dados in sus_lista:
             nome = (dados.get("nome_paciente") or "—")[:22]
-            botoes.append([InlineKeyboardButton(
-                f"💳 {num} · {nome}", callback_data=f"usar_sus_{num}"
-            )])
+            botoes.append([InlineKeyboardButton(f"💳 {num} · {nome}", callback_data=f"usar_sus_{num}")])
         botoes.append([InlineKeyboardButton("➕ Cadastrar novo SUS", callback_data="novo_sus")])
         botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="iniciar")])
         await query.edit_message_text(
             "💳 <b>Selecione qual Cartão do SUS deseja usar:</b>",
-            parse_mode="HTML", reply_markup=InlineKeyboardMarkup(botoes)
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(botoes),
         )
 
     return ETAPA_ESCOLHER_SUS
@@ -751,10 +833,12 @@ async def receber_foto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             await msg.edit_text(
                 f"❌ <b>Não consegui ler o comprovante.</b>\n\n<i>{dados['erro']}</i>\n\nTente outra foto ou digite manualmente.",
                 parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📷 Tentar outra foto", callback_data="cad_foto")],
-                    [InlineKeyboardButton("⌨️ Digitar manualmente", callback_data="cad_manual")],
-                ]),
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [InlineKeyboardButton("📷 Tentar outra foto", callback_data="cad_foto")],
+                        [InlineKeyboardButton("⌨️ Digitar manualmente", callback_data="cad_manual")],
+                    ]
+                ),
             )
             return ETAPA_AGUARDANDO_FOTO
 
@@ -781,19 +865,27 @@ async def receber_foto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
                 if res_dup.data:
                     mesmo = any(str(r.get("chat_id")) == str(update.effective_user.id) for r in res_dup.data)
                     if mesmo:
-                        await msg.edit_text(f"⚠️ <b>Você já cadastrou a regulação {num_reg}!</b>", parse_mode="HTML")
+                        await msg.edit_text(
+                            f"⚠️ <b>Você já cadastrou a regulação {num_reg}!</b>",
+                            parse_mode="HTML",
+                        )
                         return ConversationHandler.END
                     else:
-                        await msg.edit_text("⚠️ <b>Este ID já está sendo monitorado por outro usuário.</b>", parse_mode="HTML")
+                        await msg.edit_text(
+                            "⚠️ <b>Este ID já está sendo monitorado por outro usuário.</b>",
+                            parse_mode="HTML",
+                        )
                         return ConversationHandler.END
             except Exception as e:
                 logger.error(f"Erro dup OCR: {e}")
 
-        teclado = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Está correto", callback_data="ocr_ok")],
-            [InlineKeyboardButton("✏️ Corrigir manualmente", callback_data="ocr_manual")],
-            [InlineKeyboardButton("📷 Enviar outra foto", callback_data="cad_foto")],
-        ])
+        teclado = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("✅ Está correto", callback_data="ocr_ok")],
+                [InlineKeyboardButton("✏️ Corrigir manualmente", callback_data="ocr_manual")],
+                [InlineKeyboardButton("📷 Enviar outra foto", callback_data="cad_foto")],
+            ]
+        )
         await msg.edit_text("\n".join(linhas), parse_mode="HTML", reply_markup=teclado)
         return ETAPA_CONFIRMAR_OCR
 
@@ -802,10 +894,12 @@ async def receber_foto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await msg.edit_text(
             "❌ <b>Erro ao processar a foto.</b>\n\nTente novamente ou digite manualmente.",
             parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📷 Tentar outra foto", callback_data="cad_foto")],
-                [InlineKeyboardButton("⌨️ Digitar manualmente", callback_data="cad_manual")],
-            ]),
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("📷 Tentar outra foto", callback_data="cad_foto")],
+                    [InlineKeyboardButton("⌨️ Digitar manualmente", callback_data="cad_manual")],
+                ]
+            ),
         )
         return ETAPA_AGUARDANDO_FOTO
 

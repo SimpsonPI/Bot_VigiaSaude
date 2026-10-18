@@ -1,5 +1,5 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from config import BOT_SUPORTE_LINK 
+from config import BOT_SUPORTE_LINK
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -30,27 +30,29 @@ async def menu_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "6️⃣ O VigiaSaude tem vínculo com o governo?\n\n"
         "Selecione uma opção abaixo:"
     )
-    
-    teclado = InlineKeyboardMarkup([
+
+    teclado = InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("🤖 Bot de Atendimento", url=BOT_SUPORTE_LINK),
-            InlineKeyboardButton("📧 Email", callback_data="suporte_email")
-        ],
-        [
-            InlineKeyboardButton("1️⃣ Cadastrar", callback_data="faq_cadastrar"),
-            InlineKeyboardButton("2️⃣ Consultar", callback_data="faq_consultar")
-        ],
-        [
-            InlineKeyboardButton("3️⃣ Cartão SUS/ID", callback_data="faq_id"),
-            InlineKeyboardButton("4️⃣ Alterar Dados", callback_data="faq_alterar")
-        ],
-        [
-            InlineKeyboardButton("5️⃣ Planos", callback_data="faq_planos"),
-            InlineKeyboardButton("6️⃣ Vínculo Governo", callback_data="faq_governo")
-        ],
-        [InlineKeyboardButton("⬅️ Voltar ao Menu Principal", callback_data="iniciar")]
-    ])
-    
+            [
+                InlineKeyboardButton("🤖 Bot de Atendimento", url=BOT_SUPORTE_LINK),
+                InlineKeyboardButton("📧 Email", callback_data="suporte_email"),
+            ],
+            [
+                InlineKeyboardButton("1️⃣ Cadastrar", callback_data="faq_cadastrar"),
+                InlineKeyboardButton("2️⃣ Consultar", callback_data="faq_consultar"),
+            ],
+            [
+                InlineKeyboardButton("3️⃣ Cartão SUS/ID", callback_data="faq_id"),
+                InlineKeyboardButton("4️⃣ Alterar Dados", callback_data="faq_alterar"),
+            ],
+            [
+                InlineKeyboardButton("5️⃣ Planos", callback_data="faq_planos"),
+                InlineKeyboardButton("6️⃣ Vínculo Governo", callback_data="faq_governo"),
+            ],
+            [InlineKeyboardButton("⬅️ Voltar ao Menu Principal", callback_data="iniciar")],
+        ]
+    )
+
     if update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.edit_message_text(texto, parse_mode="HTML", reply_markup=teclado)
@@ -97,24 +99,18 @@ async def exibir_resposta_faq(update: Update, context: ContextTypes.DEFAULT_TYPE
         ),
     }
 
-    texto_resposta = respostas.get(
-        dados, "Informação não encontrada no FAQ."
-    )
+    texto_resposta = respostas.get(dados, "Informação não encontrada no FAQ.")
 
-    teclado = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Voltar ao Menu de Atendimento", callback_data="suporte")]
-    ])
+    teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Voltar ao Menu de Atendimento", callback_data="suporte")]])
 
-    await query.edit_message_text(
-        texto_resposta, parse_mode="HTML", reply_markup=teclado
-    )
+    await query.edit_message_text(texto_resposta, parse_mode="HTML", reply_markup=teclado)
 
 
 async def suporte_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Exibe o email de suporte."""
     query = update.callback_query
     await query.answer()
-    
+
     texto = (
         "📧 <b>Email de Suporte</b>\n\n"
         "Para entrar em contato com nossa equipe, utilize o email:\n\n"
@@ -124,11 +120,9 @@ async def suporte_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Segunda a Sexta: 08h às 18h\n"
         "Sábado: 08h às 12h"
     )
-    
-    teclado = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Voltar ao Menu de Atendimento", callback_data="suporte")]
-    ])
-    
+
+    teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Voltar ao Menu de Atendimento", callback_data="suporte")]])
+
     await query.edit_message_text(texto, parse_mode="HTML", reply_markup=teclado)
 
 
@@ -143,29 +137,27 @@ async def iniciar_atendimento_20(update: Update, context: ContextTypes.DEFAULT_T
         "<i>Sua mensagem será enviada diretamente para a nossa equipe de suporte.</i>"
     )
 
-    teclado = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Voltar ao FAQ", callback_data="suporte")],
-        [InlineKeyboardButton("❌ Fechar", callback_data="fechar_menu")],
-    ])
-
-    await query.edit_message_text(
-        mensagem, parse_mode="HTML", reply_markup=teclado
+    teclado = InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("⬅️ Voltar ao FAQ", callback_data="suporte")],
+            [InlineKeyboardButton("❌ Fechar", callback_data="fechar_menu")],
+        ]
     )
+
+    await query.edit_message_text(mensagem, parse_mode="HTML", reply_markup=teclado)
 
     return AGUARDANDO_MENSAGEM
 
 
 async def receber_mensagem_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Recebe a mensagem enviada pelo usuário e confirma o protocolo de atendimento."""
-    user = update.effective_user
-    texto_usuario = update.message.text
 
     # Confirmação enviada ao usuário
     await update.message.reply_text(
         "✅ <b>Mensagem enviada com sucesso!</b>\n\n"
         "Sua solicitação sobre o Cartão SUS / ID da Regulação foi registrada. "
         "Nossa equipe de suporte analisará o chamado e responderá em breve.",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
     return ConversationHandler.END
@@ -186,7 +178,6 @@ async def cancelar_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def responder_chamado_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Permite ao administrador responder a um chamado diretamente (se aplicável)."""
-    pass
 
 
 # Declaração do fluxo conversacional do suporte
@@ -197,9 +188,7 @@ conv_suporte = ConversationHandler(
         CommandHandler("suporte", menu_suporte),
     ],
     states={
-        AGUARDANDO_MENSAGEM: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_mensagem_suporte)
-        ],
+        AGUARDANDO_MENSAGEM: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_mensagem_suporte)],
     },
     fallbacks=[
         CallbackQueryHandler(exibir_resposta_faq, pattern="^faq_"),

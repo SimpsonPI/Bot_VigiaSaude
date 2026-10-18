@@ -53,9 +53,13 @@ def pode_verificar(chat_id: str, tipo: str) -> tuple[bool, str, int]:
     coluna = _nome_coluna(tipo)
 
     try:
-        res = supabase.table("verificacoes_usuarios").select(
-            f"{coluna}, ultima_verificacao"
-        ).eq("chat_id", str(chat_id)).eq("data", hoje).execute()
+        res = (
+            supabase.table("verificacoes_usuarios")
+            .select(f"{coluna}, ultima_verificacao")
+            .eq("chat_id", str(chat_id))
+            .eq("data", hoje)
+            .execute()
+        )
 
         usadas = 0
         ultima = None
@@ -66,7 +70,7 @@ def pode_verificar(chat_id: str, tipo: str) -> tuple[bool, str, int]:
             ultima_str = reg.get("ultima_verificacao")
             if ultima_str:
                 try:
-                    ultima = datetime.fromisoformat(str(ultima_str).replace("Z", "+00:00"))
+                    ultima = datetime.fromisoformat(str(ultima_str))
                 except Exception:
                     ultima = None
 
@@ -91,23 +95,30 @@ def pode_verificar(chat_id: str, tipo: str) -> tuple[bool, str, int]:
 def registrar_verificacao(chat_id: str, tipo: str):
     """Incrementa o contador de verificações do usuário."""
     from database import supabase
+
     hoje = _hoje_brasilia()
     agora = datetime.now(timezone.utc).isoformat()
 
-    coluna = _nome_coluna(tipo)   # ← CORRIGIDO
+    coluna = _nome_coluna(tipo)  # ← CORRIGIDO
 
     try:
-        res = supabase.table("verificacoes_usuarios").select(
-            f"id, {coluna}"
-        ).eq("chat_id", str(chat_id)).eq("data", hoje).execute()
+        res = (
+            supabase.table("verificacoes_usuarios")
+            .select(f"id, {coluna}")
+            .eq("chat_id", str(chat_id))
+            .eq("data", hoje)
+            .execute()
+        )
 
         if res.data:
             atual = res.data[0].get(coluna, 0)
-            supabase.table("verificacoes_usuarios").update({
-                coluna: atual + 1,
-                "ultima_verificacao": agora,
-                "updated_at": agora,
-            }).eq("id", res.data[0]["id"]).execute()
+            supabase.table("verificacoes_usuarios").update(
+                {
+                    coluna: atual + 1,
+                    "ultima_verificacao": agora,
+                    "updated_at": agora,
+                }
+            ).eq("id", res.data[0]["id"]).execute()
         else:
             dados = {
                 "chat_id": str(chat_id),
@@ -121,6 +132,7 @@ def registrar_verificacao(chat_id: str, tipo: str):
 
     except Exception as e:
         logger.error(f"Erro ao registrar verificação: {e}")
+
 
 def restantes_reais(chat_id: str, tipo: str) -> int:
     """
@@ -137,9 +149,13 @@ def restantes_reais(chat_id: str, tipo: str) -> int:
     coluna = _nome_coluna(tipo)
 
     try:
-        res = supabase.table("verificacoes_usuarios").select(coluna).eq(
-            "chat_id", str(chat_id)
-        ).eq("data", hoje).execute()
+        res = (
+            supabase.table("verificacoes_usuarios")
+            .select(coluna)
+            .eq("chat_id", str(chat_id))
+            .eq("data", hoje)
+            .execute()
+        )
 
         usadas = 0
         if res.data:

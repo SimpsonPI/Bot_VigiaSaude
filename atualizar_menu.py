@@ -12,6 +12,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     raise ValueError("❌ TELEGRAM_BOT_TOKEN não configurado no arquivo .env")
 
+
 async def atualizar():
     bot = Bot(token=TOKEN)
     comandos = [
@@ -27,5 +28,6 @@ async def atualizar():
     ]
     await bot.set_my_commands(comandos)
     print("✅ Menu atualizado com sucesso!")
+
 
 asyncio.run(atualizar())

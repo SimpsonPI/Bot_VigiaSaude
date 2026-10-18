@@ -90,7 +90,7 @@ ALIASES = {
     "semestral": "pro_semestral",
     "pro": "pro_trimestral",
     "free": "degustacao",
-    "cortesia": "cortesia",   # cortesia não é plano pago, mas precisa existir
+    "cortesia": "cortesia",  # cortesia não é plano pago, mas precisa existir
 }
 
 
@@ -104,6 +104,7 @@ ORDEM_PAGOS = ["mensal", "pro_trimestral", "pro_semestral"]
 # ═══════════════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════════════
+
 
 def normalizar(tipo: str) -> str:
     """Normaliza variações antigas para o id canônico."""

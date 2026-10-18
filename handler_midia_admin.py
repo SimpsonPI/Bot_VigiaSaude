@@ -38,7 +38,7 @@ async def iniciar_envio_midia(update: Update, context: ContextTypes.DEFAULT_TYPE
         "Envie a <b>imagem</b> ou o <b>documento</b> que deseja distribuir.\n"
         "Você pode adicionar uma <b>legenda</b> na própria mensagem.\n\n"
         "Para cancelar a qualquer momento, use /cancelar.",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
     return AGUARDANDO_MIDIA
 
@@ -87,7 +87,7 @@ async def receber_midia_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
         "📨 Para quem deseja enviar?\n\n"
         "• Digite o <b>ID do chat</b> (ex: <code>123456789</code>)\n"
         "• Ou digite <b>todos</b> para enviar a todos os usuários cadastrados.",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
     return AGUARDANDO_DESTINO
 
@@ -99,7 +99,7 @@ async def receber_destino_admin(update: Update, context: ContextTypes.DEFAULT_TY
     if destino == "todos":
         try:
             res = supabase.table("assinaturas").select("chat_id").execute()
-            chat_ids = list(set(str(row["chat_id"]) for row in res.data if row.get("chat_id")))
+            chat_ids = list({str(row["chat_id"]) for row in res.data if row.get("chat_id")})
         except Exception as e:
             logger.error(f"Erro ao buscar chat_ids: {e}")
             await update.message.reply_text("❌ Erro ao buscar lista de usuários.")
@@ -117,19 +117,21 @@ async def receber_destino_admin(update: Update, context: ContextTypes.DEFAULT_TY
         except ValueError:
             await update.message.reply_text(
                 "❌ Destino inválido. Envie um ID numérico ou a palavra <b>todos</b>.",
-                parse_mode="HTML"
+                parse_mode="HTML",
             )
             return AGUARDANDO_DESTINO
 
         context.user_data["destino_chat_ids"] = [chat_id_unico]
         alvo_texto = f"Chat ID <code>{chat_id_unico}</code>"
 
-    teclado = InlineKeyboardMarkup([
+    teclado = InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("✅ Confirmar envio", callback_data="confirmar_envio_midia"),
-            InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_envio_midia"),
+            [
+                InlineKeyboardButton("✅ Confirmar envio", callback_data="confirmar_envio_midia"),
+                InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_envio_midia"),
+            ]
         ]
-    ])
+    )
 
     caption = context.user_data.get("midia_caption") or "<i>(sem legenda)</i>"
     tipo = context.user_data.get("midia_tipo")
@@ -141,7 +143,7 @@ async def receber_destino_admin(update: Update, context: ContextTypes.DEFAULT_TY
         f"• Legenda: {caption}\n\n"
         "Confirma o envio?",
         parse_mode="HTML",
-        reply_markup=teclado
+        reply_markup=teclado,
     )
     return AGUARDANDO_CONFIRMACAO
 
@@ -181,12 +183,8 @@ async def confirmar_envio_midia(update: Update, context: ContextTypes.DEFAULT_TY
 
     await context.bot.send_message(
         chat_id=update.effective_user.id,
-        text=(
-            "✅ <b>Envio concluído</b>\n\n"
-            f"• Enviados com sucesso: {enviados}\n"
-            f"• Falhas: {falhas}"
-        ),
-        parse_mode="HTML"
+        text=("✅ <b>Envio concluído</b>\n\n" f"• Enviados com sucesso: {enviados}\n" f"• Falhas: {falhas}"),
+        parse_mode="HTML",
     )
 
     for k in ("midia_file_id", "midia_tipo", "midia_caption", "destino_chat_ids"):
@@ -220,7 +218,10 @@ conv_envio_midia = ConversationHandler(
     ],
     states={
         AGUARDANDO_MIDIA: [
-            MessageHandler(filters.PHOTO | filters.Document.ALL | filters.VIDEO, receber_midia_admin),
+            MessageHandler(
+                filters.PHOTO | filters.Document.ALL | filters.VIDEO,
+                receber_midia_admin,
+            ),
         ],
         AGUARDANDO_DESTINO: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, receber_destino_admin),

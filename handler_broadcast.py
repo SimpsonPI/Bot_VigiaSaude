@@ -47,7 +47,7 @@ SEGMENTOS = {
         "emoji": "🎁",
         "filtro": {"tipo_plano": "degustacao", "status_in": ["ativo", "active"]},
     },
-        "mensal": {
+    "mensal": {
         "nome": "🟢 Só mensal",
         "filtro": {"tipo_plano": "mensal", "status_in": ["ativo", "active"]},
     },
@@ -89,7 +89,7 @@ def _buscar_usuarios_segmento(segmento: str) -> list:
                 query = query.in_("status", filtro["status_in"])
 
         res = query.execute()
-        chat_ids = list(set(str(r.get("chat_id")) for r in (res.data or []) if r.get("chat_id")))
+        chat_ids = list({str(r.get("chat_id")) for r in (res.data or []) if r.get("chat_id")})
         return chat_ids
     except Exception as e:
         logger.error(f"Erro ao buscar segmento {segmento}: {e}")
@@ -122,6 +122,7 @@ def _teclado_segmentos() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(botoes)
 
+
 async def _buscar_nome_usuario(context, chat_id: str) -> str:
     """Busca o primeiro nome real do usuário no Telegram.
     Fallback: string vazia se não conseguir.
@@ -134,6 +135,7 @@ async def _buscar_nome_usuario(context, chat_id: str) -> str:
     except Exception as e:
         logger.warning(f"Não consegui pegar nome do chat {chat_id}: {e}")
     return ""
+
 
 # ==========================================
 # COMANDO /broadcast
@@ -149,12 +151,9 @@ async def comando_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data.pop("bc_segmento", None)
     context.user_data.pop("bc_conteudo", None)
     context.user_data.pop("bc_tipo", None)
-    context.user_data["bc_saudacao"] = True   # ← NOVO: saudação ativa por padrão
+    context.user_data["bc_saudacao"] = True  # ← NOVO: saudação ativa por padrão
 
-    texto = (
-        "📢 <b>BROADCAST — Envio em Massa</b>\n\n"
-        "Escolha o segmento de destinatários:"
-    )
+    texto = "📢 <b>BROADCAST — Envio em Massa</b>\n\nEscolha o segmento de destinatários:"
 
     if update.callback_query:
         await update.callback_query.answer()
@@ -221,6 +220,9 @@ async def broadcast_escolher_segmento(update: Update, context: ContextTypes.DEFA
 # RECEBE O CONTEÚDO
 # ==========================================
 async def broadcast_receber_conteudo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    data = query.data
     """Recebe o conteúdo (texto, foto ou vídeo) e mostra prévia."""
     if not update.message:
         return BROADCAST_ENVIAR_CONTEUDO
@@ -255,9 +257,8 @@ async def broadcast_receber_conteudo(update: Update, context: ContextTypes.DEFAU
         preview_texto = msg.text
     else:
         await msg.reply_text(
-            "⚠️ Tipo de conteúdo não suportado.\n\n"
-            "Envie apenas <b>texto</b>, <b>foto</b> ou <b>vídeo</b>.",
-            parse_mode="HTML"
+            "⚠️ Tipo de conteúdo não suportado.\n\n" "Envie apenas <b>texto</b>, <b>foto</b> ou <b>vídeo</b>.",
+            parse_mode="HTML",
         )
         return BROADCAST_ENVIAR_CONTEUDO
 
@@ -306,12 +307,14 @@ async def broadcast_receber_conteudo(update: Update, context: ContextTypes.DEFAU
 
     label_saudacao = "👋 Desativar saudação" if saudacao_ativa else "👋 Ativar saudação"
 
-    teclado = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ ENVIAR AGORA", callback_data="bc_conf_enviar")],
-        [InlineKeyboardButton(label_saudacao, callback_data="bc_toggle_saudacao")],
-        [InlineKeyboardButton("✏️ Trocar conteúdo", callback_data="bc_conf_trocar")],
-        [InlineKeyboardButton("❌ Cancelar", callback_data="bc_cancelar")],
-    ])
+    teclado = InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("✅ ENVIAR AGORA", callback_data="bc_conf_enviar")],
+            [InlineKeyboardButton(label_saudacao, callback_data="bc_toggle_saudacao")],
+            [InlineKeyboardButton("✏️ Trocar conteúdo", callback_data="bc_conf_trocar")],
+            [InlineKeyboardButton("❌ Cancelar", callback_data="bc_cancelar")],
+        ]
+    )
 
     await msg.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
     return BROADCAST_CONFIRMAR_ENVIO
@@ -323,11 +326,11 @@ async def broadcast_receber_conteudo(update: Update, context: ContextTypes.DEFAU
         # Volta para a prévia (reprocessa)
         novo_estado = "ATIVADA" if not atual else "DESATIVADA"
         await query.edit_message_text(
-            f"👋 Saudação automática <b>{novo_estado}</b>.\n\n"
-            "Envie qualquer coisa para gerar nova prévia.",
+            f"👋 Saudação automática <b>{novo_estado}</b>.\n\n" "Envie qualquer coisa para gerar nova prévia.",
         )
         return BROADCAST_ENVIAR_CONTEUDO
-    
+
+
 # ==========================================
 # CONFIRMAÇÃO E ENVIO
 # ==========================================
@@ -344,9 +347,7 @@ async def broadcast_confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
 
     if data == "bc_conf_trocar":
-        await query.edit_message_text(
-            "✏️ Envie o novo conteúdo (texto, foto ou vídeo):"
-        )
+        await query.edit_message_text("✏️ Envie o novo conteúdo (texto, foto ou vídeo):")
         return BROADCAST_ENVIAR_CONTEUDO
 
     if data != "bc_conf_enviar":
@@ -368,7 +369,7 @@ async def broadcast_confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_text(
         f"📤 <b>Enviando para {len(chat_ids)} usuário(s)...</b>\n\n"
         "<i>Aguarde — isso pode levar alguns segundos.</i>",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
     enviados = 0
@@ -439,13 +440,11 @@ async def broadcast_confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE
                 motivo = f"⚠️ {str(e)[:60]}"
 
             detalhes_falhas.append(f"• <code>{cid}</code> → {motivo}")
-            logger.error(f"Falha broadcast para {cid}: {repr(e)}")
+            logger.error(f"Falha broadcast para {cid}: {e!r}")
 
     # Relatório final
     texto_final = (
-        "✅ <b>Broadcast finalizado!</b>\n\n"
-        f"📤 <b>Enviadas:</b> {enviados}\n"
-        f"❌ <b>Falhas:</b> {falhas}\n"
+        "✅ <b>Broadcast finalizado!</b>\n\n" f"📤 <b>Enviadas:</b> {enviados}\n" f"❌ <b>Falhas:</b> {falhas}\n"
     )
 
     if detalhes_falhas:
@@ -455,21 +454,17 @@ async def broadcast_confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if bloqueados:
         texto_final += (
-            f"\n\n💡 <i>{len(bloqueados)} usuário(s) bloquearam o bot. "
-            "Considere removê-los com /bloquear.</i>"
+            f"\n\n💡 <i>{len(bloqueados)} usuário(s) bloquearam o bot. " "Considere removê-los com /bloquear.</i>"
         )
 
     try:
         await query.edit_message_text(texto_final, parse_mode="HTML")
     except Exception:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=texto_final,
-            parse_mode="HTML"
-        )
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=texto_final, parse_mode="HTML")
 
     context.user_data.clear()
     return ConversationHandler.END
+
 
 def _montar_saudacao(nome: str, ativa: bool = True) -> str:
     """Monta a saudação automática. Se ativa=False, retorna vazio."""
@@ -478,6 +473,7 @@ def _montar_saudacao(nome: str, ativa: bool = True) -> str:
     if nome:
         return f"Olá, {nome}! 👋\n\n"
     return "Olá! 👋\n\n"
+
 
 # ==========================================
 # CANCELAR
@@ -497,7 +493,12 @@ async def cancelar_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # ==========================================
 # CONVERSATION HANDLER
 # ==========================================
-from telegram.ext import ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import (
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    filters,
+)
 
 conv_broadcast = ConversationHandler(
     entry_points=[
@@ -509,15 +510,10 @@ conv_broadcast = ConversationHandler(
             CallbackQueryHandler(broadcast_escolher_segmento, pattern="^(bc_seg_|bc_cancelar)")
         ],
         BROADCAST_ENVIAR_CONTEUDO: [
-            MessageHandler(
-                filters.TEXT | filters.PHOTO | filters.VIDEO,
-                broadcast_receber_conteudo
-            ),
+            MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO, broadcast_receber_conteudo),
             CallbackQueryHandler(broadcast_escolher_segmento, pattern="^bc_cancelar$"),
         ],
-        BROADCAST_CONFIRMAR_ENVIO: [
-            CallbackQueryHandler(broadcast_confirmar, pattern="^(bc_conf_|bc_cancelar)")
-        ],
+        BROADCAST_CONFIRMAR_ENVIO: [CallbackQueryHandler(broadcast_confirmar, pattern="^(bc_conf_|bc_cancelar)")],
     },
     fallbacks=[
         CommandHandler("cancelar", cancelar_broadcast),

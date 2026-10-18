@@ -13,17 +13,11 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
 
     try:
         res = (
-            supabase.table("assinaturas")
-            .select("usou_degustacao", "tipo_plano")
-            .eq("chat_id", str(user_id))
-            .execute()
+            supabase.table("assinaturas").select("usou_degustacao", "tipo_plano").eq("chat_id", str(user_id)).execute()
         )
         if res.data:
             for row in res.data:
-                if (
-                    row.get("usou_degustacao") is True
-                    or pc.normalizar(row.get("tipo_plano")) == "degustacao"
-                ):
+                if row.get("usou_degustacao") is True or pc.normalizar(row.get("tipo_plano")) == "degustacao":
                     ja_usou_degustacao = True
                     break
     except Exception as e:
@@ -34,27 +28,22 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
 
     # Botão de degustação só se ainda não usou
     if not ja_usou_degustacao:
-        keyboard.append([
-            InlineKeyboardButton(
-                pc.nome_botao("degustacao"), callback_data="plano_degustacao"
-            )
-        ])
+        keyboard.append([InlineKeyboardButton(pc.nome_botao("degustacao"), callback_data="plano_degustacao")])
 
     # Planos pagos — sempre aparecem
     for p in pc.planos_pagos():
-        keyboard.append([
-            InlineKeyboardButton(p["nome_botao"], callback_data=f"plano_{p['chave']}")
-        ])
+        keyboard.append([InlineKeyboardButton(p["nome_botao"], callback_data=f"plano_{p['chave']}")])
 
     return InlineKeyboardMarkup(keyboard)
 
 
-def usuario_tem_acesso(plano_info: dict, user_id: int = None) -> bool:
+def usuario_tem_acesso(plano_info: dict, user_id: int | None = None) -> bool:
     """Valida se o usuário possui acesso liberado (Cortesia, Degustação ou Pago)."""
     # 👑 Admin tem acesso total, sempre
     if user_id is not None:
         try:
             from config import is_admin
+
             if is_admin(user_id):
                 logger.info(f"👑 Bypass admin em usuario_tem_acesso (planos) (user={user_id})")
                 return True
@@ -68,11 +57,7 @@ def usuario_tem_acesso(plano_info: dict, user_id: int = None) -> bool:
     is_cortesia = tipo_plano == "cortesia"
     is_degustacao = tipo_plano == "degustacao"
 
-    return (
-        is_cortesia
-        or (is_degustacao and (usou_degustacao or status_bruto == "ativo"))
-        or (status_bruto == "ativo")
-    )
+    return is_cortesia or (is_degustacao and (usou_degustacao or status_bruto == "ativo")) or (status_bruto == "ativo")
 
 
 async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -107,7 +92,8 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if venc:
             try:
                 from datetime import datetime
-                data_v = datetime.fromisoformat(venc.replace("Z", "+00:00"))
+
+                data_v = datetime.fromisoformat(venc)
                 venc_txt = data_v.strftime("%d/%m/%Y")
             except Exception:
                 venc_txt = "—"
@@ -185,9 +171,7 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• <b>Alertas:</b> Notificações diretas no Telegram\n\n"
             "Aproveite os recursos da plataforma!"
         )
-        keyboard_botoes = [
-            [InlineKeyboardButton("⚡ Ver Planos Pro", callback_data="planos")]
-        ]
+        keyboard_botoes = [[InlineKeyboardButton("⚡ Ver Planos Pro", callback_data="planos")]]
 
     # ─── Planos pagos ───
     elif data.startswith("plano_"):

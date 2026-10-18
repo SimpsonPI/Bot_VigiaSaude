@@ -3,6 +3,7 @@
 Armazenamento local de enquetes em JSON.
 Os dados ficam no arquivo 'enquetes_data.json' na pasta do projeto.
 """
+
 import json
 import os
 import logging
@@ -160,6 +161,7 @@ def calcular_resultado(enquete: dict) -> dict:
         "opcoes": opcoes,
     }
 
+
 def salvar_mensagem(enquete_id: int, chat_id: str, message_id: int):
     """Registra o message_id de cada destinatário para permitir edição posterior."""
     with _lock:
@@ -179,7 +181,8 @@ def obter_mensagens(enquete_id: int) -> dict:
         return {}
     return enq.get("mensagens", {})
 
-from datetime import datetime, timezone, timedelta
+
+from datetime import timedelta
 
 
 def definir_prazo(enquete_id: int, segundos: int | None):
@@ -210,7 +213,7 @@ def obter_enquetes_expiradas() -> list:
         if not fecha_str:
             continue
         try:
-            fecha = datetime.fromisoformat(fecha_str.replace("Z", "+00:00"))
+            fecha = datetime.fromisoformat(fecha_str)
             if agora >= fecha:
                 expiradas.append(enq)
         except Exception:
@@ -224,7 +227,7 @@ def tempo_restante(enquete: dict) -> str:
     if not fecha_str:
         return "sem prazo"
     try:
-        fecha = datetime.fromisoformat(fecha_str.replace("Z", "+00:00"))
+        fecha = datetime.fromisoformat(fecha_str)
         restante = (fecha - datetime.now(timezone.utc)).total_seconds()
         if restante <= 0:
             return "expirada"

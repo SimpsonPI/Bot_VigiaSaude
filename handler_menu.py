@@ -1,13 +1,19 @@
 import logging
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
+from telegram import (
+    Update,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardRemove,
+)
 from telegram.ext import ContextTypes
-from config import BOT_SUPORTE_LINK
 
 logger = logging.getLogger(__name__)
+
 
 def obter_menu_principal():
     """Remove qualquer teclado persistente da tela do usuário."""
     return ReplyKeyboardRemove()
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler principal do /start ou /iniciar."""
@@ -21,11 +27,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "(botão <b>[/]</b> ao lado da barra de digitação)."
     )
 
-    await update.message.reply_text(
-        mensagem,
-        reply_markup=obter_menu_principal(),
-        parse_mode="HTML"
-    )
+    await update.message.reply_text(mensagem, reply_markup=obter_menu_principal(), parse_mode="HTML")
+
 
 async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Responde ao comando de ajuda com o script da Central de Atendimento."""
@@ -42,20 +45,23 @@ async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Acesse nossa central dedicada abaixo para ser atendido pelo nosso assistente:"
     )
 
-    teclado = InlineKeyboardMarkup([
+    teclado = InlineKeyboardMarkup(
         [
-            InlineKeyboardButton(
-                "🤖 Central de Atendimento ao Usuário VigiaSaude",
-                url="https://t.me/AlertaSUS_Atendimento_ao_Usuario"
-            )
+            [
+                InlineKeyboardButton(
+                    "🤖 Central de Atendimento ao Usuário VigiaSaude",
+                    url="https://t.me/AlertaSUS_Atendimento_ao_Usuario",
+                )
+            ]
         ]
-    ])
+    )
 
     if update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.edit_message_text(script_atendimento, parse_mode="HTML", reply_markup=teclado)
     else:
         await update.message.reply_text(script_atendimento, parse_mode="HTML", reply_markup=teclado)
+
 
 async def callback_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Responde ao clique no botão Ajuda com o script da Central de Atendimento."""
@@ -75,21 +81,20 @@ async def callback_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Acesse nossa central dedicada abaixo para ser atendido pelo nosso assistente:"
     )
 
-    teclado = InlineKeyboardMarkup([
+    teclado = InlineKeyboardMarkup(
         [
-            InlineKeyboardButton(
-                "🤖 Central de Atendimento ao Usuário VigiaSaude",
-                url="https://t.me/AlertaSUS_Atendimento_ao_Usuario"
-            )
-        ],
-        [InlineKeyboardButton("⬅️ Voltar", callback_data="voltar_inicio")]
-    ])
-
-    await query.edit_message_text(
-        script_atendimento,
-        parse_mode="HTML",
-        reply_markup=teclado
+            [
+                InlineKeyboardButton(
+                    "🤖 Central de Atendimento ao Usuário VigiaSaude",
+                    url="https://t.me/AlertaSUS_Atendimento_ao_Usuario",
+                )
+            ],
+            [InlineKeyboardButton("⬅️ Voltar", callback_data="voltar_inicio")],
+        ]
     )
+
+    await query.edit_message_text(script_atendimento, parse_mode="HTML", reply_markup=teclado)
+
 
 async def comando_privacidade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Exibe os Termos de Uso e Política de Privacidade oficiais do VigiaSaude."""
@@ -112,22 +117,14 @@ async def comando_privacidade(update: Update, context: ContextTypes.DEFAULT_TYPE
         "<i>Ao utilizar o VigiaSaude, você declara estar de acordo com estes termos.</i>"
     )
 
-    teclado = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💬 Dúvidas / Suporte", url="https://t.me/seu_suporte")]
-    ])
+    teclado = InlineKeyboardMarkup([[InlineKeyboardButton("💬 Dúvidas / Suporte", url="https://t.me/seu_suporte")]])
 
     if update.callback_query:
         await update.callback_query.answer()
         try:
-            await update.callback_query.edit_message_text(
-                texto, parse_mode="HTML", reply_markup=teclado
-            )
+            await update.callback_query.edit_message_text(texto, parse_mode="HTML", reply_markup=teclado)
         except Exception as e:
             logger.error(f"Erro ao editar mensagem de privacidade: {e}")
-            await update.callback_query.message.reply_text(
-                texto, parse_mode="HTML", reply_markup=teclado
-            )
+            await update.callback_query.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
     else:
-        await update.message.reply_text(
-            texto, parse_mode="HTML", reply_markup=teclado
-        )
+        await update.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)

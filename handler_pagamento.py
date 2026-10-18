@@ -59,9 +59,7 @@ async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         if result.get("status") not in [200, 201]:
             erro_mp = result.get("response", {})
-            logger.error(
-                f"❌ Erro do Mercado Pago: {erro_mp.get('message')} - {erro_mp.get('cause')}"
-            )
+            logger.error(f"❌ Erro do Mercado Pago: {erro_mp.get('message')} - {erro_mp.get('cause')}")
             await context.bot.send_message(
                 chat_id=chat_id,
                 text="❌ Erro ao gerar o pagamento no Mercado Pago. Tente novamente em instantes.",
@@ -95,9 +93,7 @@ async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE
                 }
             ).execute()
         except Exception as e_db:
-            logger.warning(
-                f"⚠️ Aviso ao registrar pagamento na tabela pagamentos_pix: {e_db}"
-            )
+            logger.warning(f"⚠️ Aviso ao registrar pagamento na tabela pagamentos_pix: {e_db}")
 
         legenda_mensagem = (
             f"💳 <b>{nome_plano.upper()} — VigiaSaude</b>\n\n"

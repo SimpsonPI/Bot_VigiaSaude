@@ -3,6 +3,7 @@
 Controla o envio de teasers e opt-out para usuários com plano expirado.
 Armazena em um arquivo JSON local.
 """
+
 import json
 import os
 import logging
@@ -47,7 +48,7 @@ def pode_enviar_teaser(chat_id: str) -> bool:
         return True
 
     try:
-        dt_ultimo = datetime.fromisoformat(ultimo.replace("Z", "+00:00"))
+        dt_ultimo = datetime.fromisoformat(ultimo)
         segundos = (datetime.now(timezone.utc) - dt_ultimo).total_seconds()
         return segundos >= 24 * 3600  # 24h
     except Exception:

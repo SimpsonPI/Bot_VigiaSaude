@@ -1,31 +1,30 @@
 from dotenv import load_dotenv
 from handler_broadcast import conv_broadcast
 from admin_panel import comando_painel, callback_painel
+
 load_dotenv()
 
 from handler_consultas import (
     comando_verificar_todas,
     iniciar_verificar_especifico,
-    processar_verificar_especifico,
 )
 
 import logging
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
-    force=True
+    force=True,
 )
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 import os
-import json
 import asyncio
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-from telegram import BotCommand, BotCommandScopeAllPrivateChats, Update
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -55,18 +54,13 @@ from handler import (
     admin_cb_enq_info,
     comando_planos,
     comando_privacidade,
-    comando_verificar_todas,
     detalhar_plano,
     conv_cadastro,
     conv_consulta_especifica,
     conv_excluir,
-    iniciar_cadastro_manual,
     iniciar_corrigir,
-    iniciar_excluir,
-    iniciar_verificar_especifico,
     mostrar_email_suporte,
     start,
-    configurar_menu_comandos,
     callback_faq_suporte,
     callback_privacidade_voltar,
     callback_abrir_termo_privacidade,
@@ -87,7 +81,6 @@ from handler_gestao import (
 from handler_pagamento import gerar_pagamento_pix
 from handler_tarefas import limpar_pagamentos_pendentes
 from pagamento_polling import (
-    _ativar_assinatura,
     verificar_pagamentos_pendentes,
     set_telegram_bot,
 )
@@ -105,13 +98,11 @@ from admin import (
     comando_cortesia,
     comando_remover_cortesia,
     comando_aviso,
-    comando_menu_admin,
     comando_retirar_plano,
     comando_retirar_degustacao,
 )
 from suporte import (
     menu_suporte,
-    exibir_resposta_faq,
     iniciar_atendimento_20,
     cancelar_suporte,
     conv_suporte,
@@ -137,16 +128,15 @@ logger = logging.getLogger(__name__)
 async def erro_global_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     erro = context.error
     if isinstance(erro, (TimedOut, NetworkError)):
-        logger.warning(f"⚠️ Timeout de rede: {erro}. Aguardando 5s...")
+        logger.warning(f"âš ï¸ Timeout de rede: {erro}. Aguardando 5s...")
         await asyncio.sleep(5)
         return
-    logger.error(msg="Exceção capturada pelo bot:", exc_info=context.error)
+    logger.error(msg="ExceÃ§Ã£o capturada pelo bot:", exc_info=context.error)
 
 
 async def verificar_vencimentos(app):
-    """Verifica assinaturas próximas do vencimento e envia alertas escalonados."""
+    """Verifica assinaturas prÃ³ximas do vencimento e envia alertas escalonados."""
     from datetime import datetime, timezone
-    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
     from database import supabase
     from handler import enviar_alerta_expiracao
 
@@ -165,12 +155,12 @@ async def verificar_vencimentos(app):
             if not venc or not chat_id:
                 continue
 
-            # Cortesia não expira
+            # Cortesia nÃ£o expira
             if tipo == "cortesia":
                 continue
 
             try:
-                venc_dt = datetime.fromisoformat(str(venc).replace("Z", "+00:00"))
+                venc_dt = datetime.fromisoformat(str(venc))
             except Exception:
                 continue
 
@@ -192,20 +182,18 @@ async def verificar_vencimentos(app):
             # Envia o alerta
             await enviar_alerta_expiracao(app, str(chat_id), tipo, alvo, venc)
 
-            # Marca no banco para não repetir
+            # Marca no banco para nÃ£o repetir
             try:
-                supabase.table("assinaturas").update({
-                    "ultimo_aviso": f"{alvo}d"
-                }).eq("chat_id", str(chat_id)).execute()
+                supabase.table("assinaturas").update({"ultimo_aviso": f"{alvo}d"}).eq("chat_id", str(chat_id)).execute()
             except Exception as e:
                 logger.warning(f"Erro ao marcar ultimo_aviso para {chat_id}: {e}")
 
     except Exception as e:
-        logger.error(f"Erro na verificação de vencimentos: {e}")
+        logger.error(f"Erro na verificaÃ§Ã£o de vencimentos: {e}")
 
 
 async def post_init(app):
-    """Executa tarefas após a inicialização do bot."""
+    """Executa tarefas apÃ³s a inicializaÃ§Ã£o do bot."""
     set_telegram_bot(app.bot)
 
     job_queue = app.job_queue
@@ -231,29 +219,33 @@ async def post_init(app):
             first=30,
         )
 
-        # ✅ Varredura automática de regulações (6h)
+        # âœ… Varredura automÃ¡tica de regulaÃ§Ãµes (6h)
         from handler import executar_varredura_automatica
+
         job_queue.run_repeating(
             executar_varredura_automatica,
-            interval=6 * 3600,   # ← 6 HORAS
-            first=180,           # primeira execução 3 min após o boot
+            interval=6 * 3600,  # â† 6 HORAS
+            first=180,  # primeira execuÃ§Ã£o 3 min apÃ³s o boot
         )
         logger.info(
-            "✅ Tarefas agendadas: vencimentos (6h), limpeza (6h), polling MP (5min), varredura regulações (6h)"
+            "âœ… Tarefas agendadas: vencimentos (6h), limpeza (6h), polling MP (5min), varredura regulaÃ§Ãµes (6h)"
         )
 
         # Verifica enquetes expiradas a cada 1 minuto
         from handler_enquete_local import verificar_enquetes_expiradas
+
         job_queue.run_repeating(
             verificar_enquetes_expiradas,
-            interval=60, first=30,
+            interval=60,
+            first=30,
         )
-        logger.info("✅ Tarefas agendadas: ... enquetes expiradas (60s)")
-    
+        logger.info("âœ… Tarefas agendadas: ... enquetes expiradas (60s)")
+
+
 def main():
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
-        raise ValueError("O TELEGRAM_BOT_TOKEN precisa estar configurado nas variáveis de ambiente.")
+        raise ValueError("O TELEGRAM_BOT_TOKEN precisa estar configurado nas variÃ¡veis de ambiente.")
 
     request = HTTPXRequest(
         connection_pool_size=8,
@@ -266,7 +258,7 @@ def main():
     app = (
         ApplicationBuilder()
         .token(token)
-        #.concurrent_updates(False)
+        # .concurrent_updates(False)
         .request(request)
         .get_updates_request(request)
         .post_init(post_init)
@@ -295,11 +287,11 @@ def main():
     app.add_handler(conv_envio_midia)
     app.add_handler(conv_criar_enquete)
     app.add_handler(conv_broadcast)
-    # Comandos públicos
+    # Comandos pÃºblicos
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("iniciar", start))
     app.add_handler(CommandHandler("menu", start))
-    app.add_handler(CommandHandler("cadastrar_nova", iniciar_cadastro_manual))
+    # Redundante: já tratado no conv_cadastro
     app.add_handler(CommandHandler("verificar_todos", comando_verificar_todas))
     app.add_handler(CommandHandler("verificar_especifico", iniciar_verificar_especifico))
     app.add_handler(CommandHandler("corrigir", iniciar_corrigir))
@@ -308,7 +300,7 @@ def main():
     app.add_handler(CommandHandler("suporte", menu_suporte))
 
     # Comandos admin
-        # Painel admin interativo
+    # Painel admin interativo
     app.add_handler(CommandHandler("painel", comando_painel))
     app.add_handler(CommandHandler("admin", comando_painel))
     app.add_handler(CommandHandler("menu_admin", comando_painel))
@@ -324,7 +316,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_cb_enq_detalhado, pattern="^admin_enq_detalhado$"))
     app.add_handler(CallbackQueryHandler(admin_cb_enq_listar, pattern="^admin_enq_listar$"))
     app.add_handler(CallbackQueryHandler(admin_cb_enq_info, pattern="^admin_enq_info$"))
-    app.add_handler(CallbackQueryHandler(callback_painel, pattern="^painel_"))  # ← por último
+    app.add_handler(CallbackQueryHandler(callback_painel, pattern="^painel_"))  # â† por Ãºltimo
     app.add_handler(CommandHandler("estatisticas", comando_estatisticas))
     app.add_handler(CommandHandler("ativos", comando_listar_ativos))
     app.add_handler(CommandHandler("detalhes", comando_detalhes))
@@ -355,7 +347,7 @@ def main():
     app.add_handler(CallbackQueryHandler(comando_planos, pattern="^planos$"))
     app.add_handler(CallbackQueryHandler(start, pattern="^iniciar$"))
 
-    # FAQ - handlers específicos (substitui o genérico ^faq_)
+    # FAQ - handlers especÃ­ficos (substitui o genÃ©rico ^faq_)
     app.add_handler(CallbackQueryHandler(faq_cadastrar, pattern="^faq_cadastrar$"))
     app.add_handler(CallbackQueryHandler(faq_consultar, pattern="^faq_consultar$"))
     app.add_handler(CallbackQueryHandler(faq_id, pattern="^faq_id$"))
@@ -377,15 +369,12 @@ def main():
     # Callbacks de enquete (voto e admin)
     app.add_handler(CallbackQueryHandler(receber_voto, pattern="^voto_\\d+_\\d+$"))
     app.add_handler(CallbackQueryHandler(voto_ja_registrado, pattern="^voto_ja_registrado$"))
-    app.add_handler(CallbackQueryHandler(
-        callback_resultado,
-        pattern="^enq_(encerrar|reabrir|apagar|atualizar)_\\d+$"
-    ))
-    #app.add_handler(CallbackQueryHandler(
-    #processar_verificar_especifico, pattern="^ver_esp_"
-    #))
+    app.add_handler(CallbackQueryHandler(callback_resultado, pattern="^enq_(encerrar|reabrir|apagar|atualizar)_\\d+$"))
+    # app.add_handler(CallbackQueryHandler(
+    # processar_verificar_especifico, pattern="^ver_esp_"
+    # ))
 
-        # ─── Servidor HTTP auxiliar (Render / Railway) ───
+    # â”€â”€â”€ Servidor HTTP auxiliar (Render / Railway) â”€â”€â”€
     PORT = int(os.environ.get("PORT", "8080"))
 
     class HealthHandler(BaseHTTPRequestHandler):
@@ -405,7 +394,7 @@ def main():
     def run_http_server(port):
         try:
             server = HTTPServer(("0.0.0.0", port), HealthHandler)
-            logger.info(f"✅ Servidor HTTP auxiliar rodando na porta {port}")
+            logger.info(f"âœ… Servidor HTTP auxiliar rodando na porta {port}")
             server.serve_forever()
         except Exception as e:
             logger.error(f"Erro no servidor HTTP: {e}")
@@ -414,6 +403,7 @@ def main():
 
     logger.info("Iniciando o bot VigiaSaude via polling...")
     app.run_polling(drop_pending_updates=True)
+
 
 if __name__ == "__main__":
     main()

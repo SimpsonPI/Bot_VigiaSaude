@@ -24,9 +24,11 @@ def set_telegram_bot(bot):
 
 
 def _calcular_dias_plano(tipo_plano: str) -> int:
-    p = str(tipo_plano).lower()
+    str(tipo_plano).lower()
+
     def _calcular_dias_plano(tipo_plano: str) -> int:
         import planos_config as pc
+
         return pc.dias(tipo_plano)
 
 
@@ -69,13 +71,15 @@ async def processar_pagamento_aprovado(payment_id: str) -> bool:
 
         # 2. Atualiza pagamentos_pix
         try:
-            supabase.table("pagamentos_pix").update({
-                "status": "approved",
-            }).eq("pix_id", mp_payment_id).execute()
+            supabase.table("pagamentos_pix").update(
+                {
+                    "status": "approved",
+                }
+            ).eq("pix_id", mp_payment_id).execute()
         except Exception as e:
             logger.warning(f"Erro ao atualizar pagamentos_pix: {e}")
 
-                # 3. Calcula validade (SOMA se plano atual ainda ativo)
+            # 3. Calcula validade (SOMA se plano atual ainda ativo)
         dias = _calcular_dias_plano(tipo_plano)
         agora = datetime.now(timezone.utc)
 
@@ -97,33 +101,27 @@ async def processar_pagamento_aprovado(payment_id: str) -> bool:
                     tipo_atual = str(info.get("tipo_plano", "")).lower()
                     venc_str = info.get("data_vencimento")
 
-                    if (
-                        status_atual in ("ativo", "active", "ativa")
-                        and tipo_atual != "degustacao"
-                        and venc_str
-                    ):
-                        venc_dt = datetime.fromisoformat(
-                            str(venc_str).replace("Z", "+00:00")
-                        )
+                    if status_atual in ("ativo", "active", "ativa") and tipo_atual != "degustacao" and venc_str:
+                        venc_dt = datetime.fromisoformat(str(venc_str))
                         if venc_dt > agora:
                             base = venc_dt
-                            logger.info(
-                                f"📅 Webhook: soma aplicada, base = "
-                                f"{base.strftime('%d/%m/%Y')}"
-                            )
+                            logger.info(f"📅 Webhook: soma aplicada, base = " f"{base.strftime('%d/%m/%Y')}")
             except Exception as e:
                 logger.warning(f"Erro ao checar vencimento (webhook): {e}")
 
         vencimento = base + timedelta(days=dias)
 
         # 4. Ativa assinatura
-        supabase.table("assinaturas").upsert({
-            "chat_id": str(chat_id),
-            "tipo_plano": tipo_plano,
-            "status": "ativo",
-            "data_inicio": agora.isoformat(),
-            "data_vencimento": vencimento.isoformat(),
-        }, on_conflict="chat_id").execute()
+        supabase.table("assinaturas").upsert(
+            {
+                "chat_id": str(chat_id),
+                "tipo_plano": tipo_plano,
+                "status": "ativo",
+                "data_inicio": agora.isoformat(),
+                "data_vencimento": vencimento.isoformat(),
+            },
+            on_conflict="chat_id",
+        ).execute()
 
         logger.info(
             f"✅ Assinatura ativada | chat_id={chat_id} | plano={tipo_plano} | "

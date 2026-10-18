@@ -1,4 +1,4 @@
-﻿import shutil
+import shutil
 
 # ─── Backup ───
 for a in ["database.py", "handler.py", "handler_planos.py"]:
@@ -39,17 +39,21 @@ novo_db = '''def verificar_assinatura_ativa(user_id: int) -> bool:
 
     try:'''
 
-aplicar_patch("database.py", antigo_db, novo_db,
-              "database.py: bypass em verificar_assinatura_ativa")
+aplicar_patch(
+    "database.py",
+    antigo_db,
+    novo_db,
+    "database.py: bypass em verificar_assinatura_ativa",
+)
 
 
 # ═══════════════════════════════════════════════════════════
 # 2) handler.py — usuario_tem_acesso
 # ═══════════════════════════════════════════════════════════
-antigo_h = '''def usuario_tem_acesso(plano_info: dict) -> bool:
-    status_bruto = str(plano_info.get("status", "")).strip().lower()'''
+antigo_h = """def usuario_tem_acesso(plano_info: dict) -> bool:
+    status_bruto = str(plano_info.get("status", "")).strip().lower()"""
 
-novo_h = '''def usuario_tem_acesso(plano_info: dict, user_id: int = None) -> bool:
+novo_h = """def usuario_tem_acesso(plano_info: dict, user_id: int = None) -> bool:
     # 👑 Admin tem acesso total, sempre
     if user_id is not None:
         try:
@@ -60,10 +64,9 @@ novo_h = '''def usuario_tem_acesso(plano_info: dict, user_id: int = None) -> boo
         except Exception:
             pass
 
-    status_bruto = str(plano_info.get("status", "")).strip().lower()'''
+    status_bruto = str(plano_info.get("status", "")).strip().lower()"""
 
-aplicar_patch("handler.py", antigo_h, novo_h,
-              "handler.py: bypass em usuario_tem_acesso")
+aplicar_patch("handler.py", antigo_h, novo_h, "handler.py: bypass em usuario_tem_acesso")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -87,8 +90,12 @@ novo_hp = '''def usuario_tem_acesso(plano_info: dict, user_id: int = None) -> bo
 
     status_bruto = str(plano_info.get("status", "")).strip().lower()'''
 
-aplicar_patch("handler_planos.py", antigo_hp, novo_hp,
-              "handler_planos.py: bypass em usuario_tem_acesso")
+aplicar_patch(
+    "handler_planos.py",
+    antigo_hp,
+    novo_hp,
+    "handler_planos.py: bypass em usuario_tem_acesso",
+)
 
 
 print("\nEtapa B concluida")

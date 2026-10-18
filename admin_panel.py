@@ -7,7 +7,7 @@ from config import ADMIN_CHAT_ID
 
 logger = logging.getLogger(__name__)
 
-from config import ADMIN_IDS, ADMIN_CHAT_ID
+from config import ADMIN_IDS
 
 
 def _eh_admin(user_id: int) -> bool:
@@ -18,33 +18,39 @@ def _eh_admin(user_id: int) -> bool:
 # TECLADOS
 # ═══════════════════════════════════════════════
 
+
 def _teclado_principal() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+    return InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("📊 Relatórios", callback_data="painel_relatorios"),
-            InlineKeyboardButton("👑 Planos", callback_data="painel_planos"),
-        ],
-        [
-            InlineKeyboardButton("🛡️ Segurança", callback_data="painel_seguranca"),
-            InlineKeyboardButton("📢 Comunicação", callback_data="painel_comunicacao"),
-        ],
-        [
-            InlineKeyboardButton("📋 Enquetes", callback_data="painel_enquetes"),
-            InlineKeyboardButton("🔧 Sistema", callback_data="painel_sistema"),
-        ],
-        [InlineKeyboardButton("❌ Fechar Painel", callback_data="painel_fechar")],
-    ])
+            [
+                InlineKeyboardButton("📊 Relatórios", callback_data="painel_relatorios"),
+                InlineKeyboardButton("👑 Planos", callback_data="painel_planos"),
+            ],
+            [
+                InlineKeyboardButton("🛡️ Segurança", callback_data="painel_seguranca"),
+                InlineKeyboardButton("📢 Comunicação", callback_data="painel_comunicacao"),
+            ],
+            [
+                InlineKeyboardButton("📋 Enquetes", callback_data="painel_enquetes"),
+                InlineKeyboardButton("🔧 Sistema", callback_data="painel_sistema"),
+            ],
+            [InlineKeyboardButton("❌ Fechar Painel", callback_data="painel_fechar")],
+        ]
+    )
 
 
 def _teclado_voltar() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ Voltar ao Painel", callback_data="painel_inicio")],
-    ])
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("⬅️ Voltar ao Painel", callback_data="painel_inicio")],
+        ]
+    )
 
 
 # ═══════════════════════════════════════════════
 # TEXTOS DAS CATEGORIAS
 # ═══════════════════════════════════════════════
+
 
 def _texto_relatorios() -> str:
     return (
@@ -114,6 +120,7 @@ def _texto_sistema() -> str:
 # COMANDO /painel
 # ═══════════════════════════════════════════════
 
+
 async def comando_painel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Abre o painel de controle interativo."""
     if not _eh_admin(update.effective_user.id):
@@ -141,6 +148,7 @@ async def comando_painel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # CALLBACK DO PAINEL
 # ═══════════════════════════════════════════════
 
+
 async def callback_painel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Processa os cliques no painel."""
     query = update.callback_query
@@ -155,7 +163,7 @@ async def callback_painel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "painel_fechar":
         await query.edit_message_text(
             "🎛️ Painel fechado.\n\nUse <code>/painel</code> para reabrir.",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         return
 
@@ -173,6 +181,7 @@ async def callback_painel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "painel_estatisticas":
         try:
             from database_atendimento import buscar_estatisticas_admin_periodo
+
             stats = await buscar_estatisticas_admin_periodo()
 
             # Extrai os números principais
@@ -194,8 +203,14 @@ async def callback_painel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "painel_ativos":
         try:
             from database import supabase
-            r = (supabase.table("assinaturas").select("chat_id, tipo_plano, status")
-                 .eq("status", "ativo").limit(10).execute())
+
+            r = (
+                supabase.table("assinaturas")
+                .select("chat_id, tipo_plano, status")
+                .eq("status", "ativo")
+                .limit(10)
+                .execute()
+            )
             lista = r.data or []
 
             if not lista:

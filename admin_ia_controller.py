@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 # Importa o storage das enquetes locais
 try:
     from enquetes_storage import listar_enquetes, calcular_resultado
+
     ENQUETES_OK = True
 except ImportError:
     ENQUETES_OK = False
@@ -24,30 +25,74 @@ logger = logging.getLogger(__name__)
 
 GITHUB_BASE_URL = "https://raw.githubusercontent.com/SimpsonPI/central_alertasus_2.5/main/"
 
-TABELAS_PERMITIDAS = ["assinaturas", "AlertaSUS_2.0", "pagamentos_pix", "lgpd_consentimentos"]
+TABELAS_PERMITIDAS = [
+    "assinaturas",
+    "AlertaSUS_2.0",
+    "pagamentos_pix",
+    "lgpd_consentimentos",
+]
 
 SAUDACOES = [
-    "olá", "oi", "bom dia", "boa tarde", "boa noite", "tudo bem",
-    "hello", "hey", "e aí", "como vai", "opa", "salve"
+    "olá",
+    "oi",
+    "bom dia",
+    "boa tarde",
+    "boa noite",
+    "tudo bem",
+    "hello",
+    "hey",
+    "e aí",
+    "como vai",
+    "opa",
+    "salve",
 ]
 
 PALAVRAS_CHAVE = [
-    "resumo", "estatísticas", "quantos", "dados da tabela", "ler arquivo",
-    "verificar regulação", "minha regulação", "total", "listar", "relatório",
-    "vencimento", "pagamentos", "usuários ativos", "inativos", "status",
-    "consulta", "plano", "assinatura", "bloqueado", "pendente", "pix", "custa",
-    "enquete", "enquetes", "votação", "votos", "votar"  # ← NOVAS
+    "resumo",
+    "estatísticas",
+    "quantos",
+    "dados da tabela",
+    "ler arquivo",
+    "verificar regulação",
+    "minha regulação",
+    "total",
+    "listar",
+    "relatório",
+    "vencimento",
+    "pagamentos",
+    "usuários ativos",
+    "inativos",
+    "status",
+    "consulta",
+    "plano",
+    "assinatura",
+    "bloqueado",
+    "pendente",
+    "pix",
+    "custa",
+    "enquete",
+    "enquetes",
+    "votação",
+    "votos",
+    "votar",  # ← NOVAS
 ]
 
 PALAVRAS_NOVIDADES = [
-    "novidades", "mudanças recentes", "o que mudou", "últimas", "recentes",
-    "novos cadastros", "novas regulações", "atualizações hoje"
+    "novidades",
+    "mudanças recentes",
+    "o que mudou",
+    "últimas",
+    "recentes",
+    "novos cadastros",
+    "novas regulações",
+    "atualizações hoje",
 ]
 
 
 # ═══════════════════════════════════════════════════════════
 # CONTEXTO DINÂMICO DO SISTEMA
 # ═══════════════════════════════════════════════════════════
+
 
 async def coletar_contexto_sistema() -> str:
     """
@@ -75,16 +120,13 @@ async def coletar_contexto_sistema() -> str:
                 linhas.append("• Detalhes das ativas:")
                 for e in ativas[:5]:
                     r = calcular_resultado(e)
-                    linhas.append(
-                        f"  - #{e['id']}: \"{e.get('pergunta', '')[:60]}\" "
-                        f"({r['total']} voto(s))"
-                    )
+                    linhas.append(f'  - #{e["id"]}: "{e.get("pergunta", "")[:60]}" ' f"({r['total']} voto(s))")
             else:
                 linhas.append("• Nenhuma enquete ativa no momento.")
 
             if encerradas:
                 ult = encerradas[0]
-                linhas.append(f"• Última encerrada: #{ult['id']} — \"{ult.get('pergunta', '')[:60]}\"")
+                linhas.append(f'• Última encerrada: #{ult["id"]} — "{ult.get("pergunta", "")[:60]}"')
         except Exception as e:
             logger.error(f"Erro ao coletar enquetes: {e}")
             linhas.append("ENQUETES: erro ao carregar.")
@@ -95,7 +137,11 @@ async def coletar_contexto_sistema() -> str:
         total_users = res.count if hasattr(res, "count") and res.count is not None else len(res.data or [])
 
         res_ativos = supabase.table("assinaturas").select("*", count="exact").eq("status", "ativo").execute()
-        total_ativos = res_ativos.count if hasattr(res_ativos, "count") and res_ativos.count is not None else len(res_ativos.data or [])
+        total_ativos = (
+            res_ativos.count
+            if hasattr(res_ativos, "count") and res_ativos.count is not None
+            else len(res_ativos.data or [])
+        )
 
         linhas.append(f"\nUSUÁRIOS:")
         linhas.append(f"• Total de assinaturas: {total_users}")
@@ -128,6 +174,7 @@ async def coletar_contexto_sistema() -> str:
 # HELPERS
 # ═══════════════════════════════════════════════════════════
 
+
 async def obter_conhecimento() -> str:
     """Busca o conteúdo dos arquivos de conhecimento no GitHub."""
     conhecimento = ""
@@ -147,14 +194,17 @@ async def chamar_groq(system_prompt: str, user_message: str) -> str:
     if not GROQ_API_KEY:
         return "❌ GROQ_API_KEY não configurada."
     url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
     payload = {
         "model": "openai/gpt-oss-120b",
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
+            {"role": "user", "content": user_message},
         ],
-        "temperature": 0.2
+        "temperature": 0.2,
     }
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -164,12 +214,13 @@ async def chamar_groq(system_prompt: str, user_message: str) -> str:
             return data["choices"][0]["message"]["content"]
     except Exception as e:
         logger.error(f"Erro ao chamar Groq: {e}")
-        return f"❌ Erro na chamada à IA: {str(e)}"
+        return f"❌ Erro na chamada à IA: {e!s}"
 
 
 # ═══════════════════════════════════════════════════════════
 # HANDLER PRINCIPAL
 # ═══════════════════════════════════════════════════════════
+
 
 async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler para mensagens do administrador (linguagem natural)."""
@@ -178,7 +229,10 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not update.message or not update.message.text:
         return
 
-    print(f"🔵 DEBUG IA ADMIN: chamada. _em_fluxo_admin={context.user_data.get('_em_fluxo_admin')}", flush=True)
+    print(
+        f"🔵 DEBUG IA ADMIN: chamada. _em_fluxo_admin={context.user_data.get('_em_fluxo_admin')}",
+        flush=True,
+    )
 
     if context.user_data.get("_em_fluxo_admin"):
         print(f"🔵 DEBUG IA ADMIN: bloqueada (em fluxo)", flush=True)
@@ -202,17 +256,46 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     # 2. Novidades (últimas 24h)
-        # 2. Se for pergunta sobre "novidades", consulta banco de dados
+    # 2. Se for pergunta sobre "novidades", consulta banco de dados
     if any(palavra in user_text_lower for palavra in PALAVRAS_NOVIDADES):
         try:
             from datetime import timezone
+
             agora = datetime.now(timezone.utc)
             inicio = agora - timedelta(days=1)
 
-            novas_regulacoes = supabase.table("AlertaSUS_2.0").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count or 0
-            novas_assinaturas = supabase.table("assinaturas").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count or 0
-            novos_pagamentos = supabase.table("pagamentos_pix").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count or 0
-            novos_chamados = supabase.table("chamados_suporte").select("*", count="exact").gte("created_at", inicio.isoformat()).execute().count or 0
+            novas_regulacoes = (
+                supabase.table("AlertaSUS_2.0")
+                .select("*", count="exact")
+                .gte("created_at", inicio.isoformat())
+                .execute()
+                .count
+                or 0
+            )
+            novas_assinaturas = (
+                supabase.table("assinaturas")
+                .select("*", count="exact")
+                .gte("created_at", inicio.isoformat())
+                .execute()
+                .count
+                or 0
+            )
+            novos_pagamentos = (
+                supabase.table("pagamentos_pix")
+                .select("*", count="exact")
+                .gte("created_at", inicio.isoformat())
+                .execute()
+                .count
+                or 0
+            )
+            novos_chamados = (
+                supabase.table("chamados_suporte")
+                .select("*", count="exact")
+                .gte("created_at", inicio.isoformat())
+                .execute()
+                .count
+                or 0
+            )
 
             total = novas_regulacoes + novas_assinaturas + novos_pagamentos + novos_chamados
 
@@ -283,13 +366,13 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
     prompt_deteccao = (
         f"Você é o VS, assistente do {NOME_ADMIN}. Identifique a ação que o administrador deseja executar. "
         "Responda APENAS com um JSON válido: "
-        "{\"acao\": \"consultar\" | \"ler_arquivo\" | \"resumo\", "
-        "\"tabela\": \"nome_da_tabela\", "
-        "\"filtros\": {\"campo\": \"valor\"}, "
-        "\"arquivo\": \"nome_do_arquivo\"} "
+        '{"acao": "consultar" | "ler_arquivo" | "resumo", '
+        '"tabela": "nome_da_tabela", '
+        '"filtros": {"campo": "valor"}, '
+        '"arquivo": "nome_do_arquivo"} '
         "Tabelas disponíveis: assinaturas, AlertaSUS_2.0, pagamentos_pix, lgpd_consentimentos. "
         "Para perguntas sobre preços de planos, use a ação 'resumo' (a informação está no conhecimento). "
-        "Se não souber, retorne {\"acao\": \"resumo\"}."
+        'Se não souber, retorne {"acao": "resumo"}.'
     )
 
     resposta_ia = await chamar_groq(prompt_deteccao, user_message)
@@ -316,7 +399,7 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
                 dados_brutos = json.dumps(res.data, ensure_ascii=False, indent=2)
             except Exception as e:
                 logger.error(f"Erro ao consultar tabela {tabela}: {e}")
-                dados_brutos = f"Erro: {str(e)}"
+                dados_brutos = f"Erro: {e!s}"
 
         elif acao == "ler_arquivo":
             try:
@@ -329,17 +412,19 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
                         dados_brutos = f"Arquivo não encontrado (status {response.status_code})."
             except Exception as e:
                 logger.error(f"Erro ao ler arquivo: {e}")
-                dados_brutos = f"Erro: {str(e)}"
+                dados_brutos = f"Erro: {e!s}"
 
         elif acao == "resumo":
             try:
                 total_assinaturas = supabase.table("assinaturas").select("*", count="exact").execute().count
                 total_regulacoes = supabase.table("AlertaSUS_2.0").select("*", count="exact").execute().count
-                total_pix_pendentes = supabase.table("pagamentos_pix").select("*", count="exact").eq("status", "pending").execute().count
+                total_pix_pendentes = (
+                    supabase.table("pagamentos_pix").select("*", count="exact").eq("status", "pending").execute().count
+                )
                 dados_brutos = f"Total assinaturas: {total_assinaturas}. Total regulações: {total_regulacoes}. Pagamentos pendentes: {total_pix_pendentes}."
             except Exception as e:
                 logger.error(f"Erro ao gerar resumo: {e}")
-                dados_brutos = f"Erro: {str(e)}"
+                dados_brutos = f"Erro: {e!s}"
 
         prompt_formatacao = (
             f"Você é o VS, assistente do {NOME_ADMIN}. "

@@ -62,10 +62,10 @@ CANAL_SUPORTE_ID = -1004479965268
 
 # ==================== ESTADOS DO CONVERSATIONHANDLER ====================
 
-MENU_PRINCIPAL = 0              # Menu inicial com FAQ e opções
-AGUARDANDO_MENSAGEM = 1         # Aguardando mensagem do usuário
-AGUARDANDO_RESPOSTA_ADMIN = 2   # Aguardando resposta do administrador
-AGUARDANDO_FAQ = 3              # Navegando pelo FAQ
+MENU_PRINCIPAL = 0  # Menu inicial com FAQ e opções
+AGUARDANDO_MENSAGEM = 1  # Aguardando mensagem do usuário
+AGUARDANDO_RESPOSTA_ADMIN = 2  # Aguardando resposta do administrador
+AGUARDANDO_FAQ = 3  # Navegando pelo FAQ
 
 # ==================== MENSAGENS DO SISTEMA ====================
 
@@ -99,11 +99,7 @@ MSG_ATENDIMENTO_INICIADO = (
     "✏️ <i>Digite sua mensagem agora...</i>"
 )
 
-RODAPE_ALERTAS = (
-    f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
-    f"📧 E-mail: {EMAIL_SUPORTE}\n"
-    f"🤖 Atendimento: {BOT_SUPORTE_LINK}"
-)
+RODAPE_ALERTAS = f"\n\n━━━━━━━━━━━━━━━━━━━━\n" f"📧 E-mail: {EMAIL_SUPORTE}\n" f"🤖 Atendimento: {BOT_SUPORTE_LINK}"
 
 # ==================== CONFIGURAÇÕES DE SEGURANÇA ====================
 
@@ -119,17 +115,21 @@ TABELA_HISTORICO = "historico_atendimento"
 
 # ==================== FUNÇÕES AUXILIARES ====================
 
+
 def is_admin(user_id: int) -> bool:
     """Verifica se um usuário é administrador."""
     return user_id in ADMIN_IDS or user_id == ADMIN_CHAT_ID
+
 
 def get_fuso_horario():
     """Retorna o fuso horário configurado."""
     return FUSO_HORARIO
 
+
 def get_supabase_client() -> Client:
     """Retorna o cliente Supabase configurado."""
     return supabase
+
 
 # ==================== VALIDAÇÃO ADICIONAL ====================
 
@@ -137,47 +137,49 @@ if not TELEGRAM_BOT_TOKEN:
     print("⚠️ AVISO: TELEGRAM_BOT_TOKEN não configurado. O bot principal pode não funcionar.")
 
 if CANAL_SUPORTE_ID >= 0:
-    print("⚠️ AVISO: CANAL_SUPORTE_ID parece ser um ID de grupo positivo. Certifique-se de que é um ID de canal/chat válido.")
+    print(
+        "⚠️ AVISO: CANAL_SUPORTE_ID parece ser um ID de grupo positivo. Certifique-se de que é um ID de canal/chat válido."
+    )
 
 # ==================== EXPORTAÇÕES ====================
 
 __all__ = [
-    'SUPABASE_URL',
-    'SUPABASE_KEY',
-    'TELEGRAM_BOT_TOKEN',
-    'TELEGRAM_TOKEN_SUPORTE',
-    'ADMIN_CHAT_ID',
-    'ADMIN_IDS',
-    'SCRAPER_KEY',
-    'PORT',
-    'URL_FORMULARIO_PAGES',
-    'EMAIL_SUPORTE',
-    'BOT_SUPORTE_USERNAME',
-    'BOT_SUPORTE_LINK',
-    'RODAPE_ALERTAS',
-    'supabase',
-    'FUSO_HORARIO',
-    'URL_BUSCA_FMS',
-    'BOT_APP',
-    'MAIN_LOOP',
-    'CANAL_SUPORTE_ID',
-    'MENU_PRINCIPAL',
-    'AGUARDANDO_MENSAGEM',
-    'AGUARDANDO_RESPOSTA_ADMIN',
-    'AGUARDANDO_FAQ',
-    'MSG_RESPOSTA_ENVIADA',
-    'MSG_ATENDIMENTO_ENCERRADO',
-    'MSG_MODAL_RESPOSTA',
-    'MSG_BOAS_VINDAS',
-    'MSG_SUPORTE_INICIAL',
-    'MSG_ATENDIMENTO_INICIADO',
-    'TIMEOUT_ATENDIMENTO',
-    'MAX_TENTATIVAS_ENVIO',
-    'TABELA_USUARIOS',
-    'TABELA_REGULACOES',
-    'TABELA_CHAMADOS',
-    'TABELA_HISTORICO',
-    'is_admin',
-    'get_fuso_horario',
-    'get_supabase_client',
+    "ADMIN_CHAT_ID",
+    "ADMIN_IDS",
+    "AGUARDANDO_FAQ",
+    "AGUARDANDO_MENSAGEM",
+    "AGUARDANDO_RESPOSTA_ADMIN",
+    "BOT_APP",
+    "BOT_SUPORTE_LINK",
+    "BOT_SUPORTE_USERNAME",
+    "CANAL_SUPORTE_ID",
+    "EMAIL_SUPORTE",
+    "FUSO_HORARIO",
+    "MAIN_LOOP",
+    "MAX_TENTATIVAS_ENVIO",
+    "MENU_PRINCIPAL",
+    "MSG_ATENDIMENTO_ENCERRADO",
+    "MSG_ATENDIMENTO_INICIADO",
+    "MSG_BOAS_VINDAS",
+    "MSG_MODAL_RESPOSTA",
+    "MSG_RESPOSTA_ENVIADA",
+    "MSG_SUPORTE_INICIAL",
+    "PORT",
+    "RODAPE_ALERTAS",
+    "SCRAPER_KEY",
+    "SUPABASE_KEY",
+    "SUPABASE_URL",
+    "TABELA_CHAMADOS",
+    "TABELA_HISTORICO",
+    "TABELA_REGULACOES",
+    "TABELA_USUARIOS",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_TOKEN_SUPORTE",
+    "TIMEOUT_ATENDIMENTO",
+    "URL_BUSCA_FMS",
+    "URL_FORMULARIO_PAGES",
+    "get_fuso_horario",
+    "get_supabase_client",
+    "is_admin",
+    "supabase",
 ]

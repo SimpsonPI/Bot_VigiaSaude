@@ -1,4 +1,3 @@
-import os
 import re
 import random
 import asyncio
@@ -11,6 +10,7 @@ from telegram.helpers import escape_markdown
 from config import URL_BUSCA_FMS, SCRAPER_KEY
 
 logger = logging.getLogger(__name__)
+
 
 def _extrair_valor_campo_fms(soup: BeautifulSoup, rotulo: str) -> str | None:
     rotulo_normalizado = rotulo.strip().lower()
@@ -90,9 +90,7 @@ def _extrair_dados_html(soup: BeautifulSoup) -> dict:
         "previsao_atendimento": None,
     }
 
-    titulos = card.find_all(
-        ["h4", "h5"], class_=re.compile(r"card-title", re.I)
-    ) or card.find_all(["h4", "h5"])
+    titulos = card.find_all(["h4", "h5"], class_=re.compile(r"card-title", re.I)) or card.find_all(["h4", "h5"])
 
     for elem in titulos:
         rotulo = elem.get_text(strip=True)
@@ -101,9 +99,7 @@ def _extrair_dados_html(soup: BeautifulSoup) -> dict:
 
         p = elem.find_next_sibling(["p", "span", "div"])
         if not p and elem.parent:
-            p = elem.parent.find(
-                ["p", "span", "div"], class_=re.compile(r"card-text|badge", re.I)
-            )
+            p = elem.parent.find(["p", "span", "div"], class_=re.compile(r"card-text|badge", re.I))
 
         if not p:
             continue
@@ -133,11 +129,7 @@ def _extrair_dados_html(soup: BeautifulSoup) -> dict:
             dados_mapeados["previsao_atendimento"] = valor
 
     # 3. Determinação da Situação
-    situacao = (
-        dados_mapeados["situacao"]
-        or campos_brutos.get("Situação")
-        or _extrair_valor_campo_fms(soup, "Situação")
-    )
+    situacao = dados_mapeados["situacao"] or campos_brutos.get("Situação") or _extrair_valor_campo_fms(soup, "Situação")
 
     if not situacao:
         if dados_mapeados["data_consulta"] or (alerta_texto and "MARCADO" in alerta_texto.upper()):
@@ -192,6 +184,7 @@ def nome_paciente_exibicao(nome: str | None) -> str:
         return "Não informado"
     return nome.strip()
 
+
 MARGEM_VENCIMENTO_HORAS = 3
 
 
@@ -217,6 +210,7 @@ def _status_corrigido(situacao: str | None, data_consulta: str | None) -> str | 
         logging.warning(f"Falha ao corrigir status com data '{data_consulta}': {e}")
     return situacao
 
+
 async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict:
     atraso = random.uniform(1.0, 2.0)
     await asyncio.sleep(atraso)
@@ -232,9 +226,7 @@ async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict
     }
 
     try:
-        async with httpx.AsyncClient(
-            follow_redirects=True, timeout=25.0, headers=headers
-        ) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=25.0, headers=headers) as client:
             resposta = await client.get(url_fms_target)
             if resposta.status_code == 200 and "nenhum registro" not in resposta.text.lower():
                 soup = BeautifulSoup(resposta.text, "html.parser")
@@ -243,7 +235,10 @@ async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict
         logger.info(f"Acesso direto à FMS falhou ou bloqueou ({e}). Acionando ScraperAPI...")
 
     if not SCRAPER_KEY:
-        return {"sucesso": False, "mensagem": "Erro de configuração na chave do ScraperAPI."}
+        return {
+            "sucesso": False,
+            "mensagem": "Erro de configuração na chave do ScraperAPI.",
+        }
 
     scraper_url = f"http://api.scraperapi.com?api_key={SCRAPER_KEY}&url={url_fms_target}"
 
@@ -256,7 +251,10 @@ async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict
                     if tentativa < max_tentativas:
                         await asyncio.sleep(2)
                         continue
-                    return {"sucesso": False, "mensagem": f"Erro HTTP {resposta.status_code}"}
+                    return {
+                        "sucesso": False,
+                        "mensagem": f"Erro HTTP {resposta.status_code}",
+                    }
 
                 soup = BeautifulSoup(resposta.text, "html.parser")
                 texto_pagina = soup.get_text().lower()
@@ -270,18 +268,19 @@ async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict
                 return _extrair_dados_html(soup)
 
         except (httpx.TimeoutException, httpx.RequestError) as e:
-            logger.warning(
-                f"Tentativa ScraperAPI {tentativa}/{max_tentativas} falhou (Reg {numero_reg}): {e}"
-            )
+            logger.warning(f"Tentativa ScraperAPI {tentativa}/{max_tentativas} falhou (Reg {numero_reg}): {e}")
             if tentativa < max_tentativas:
                 await asyncio.sleep(2)
 
-    return {"sucesso": False, "mensagem": "Tempo limite de conexão excedido ao acessar a FMS."}
+    return {
+        "sucesso": False,
+        "mensagem": "Tempo limite de conexão excedido ao acessar a FMS.",
+    }
 
 
 async def consultar_status_sus(numero_reg: str) -> str | None:
     try:
-        resultado = await consultar_com_limite(num_reg)
+        resultado = await consultar_com_limite(numero_reg)
         if isinstance(resultado, dict) and resultado.get("sucesso"):
             return resultado.get("situacao") or "Informada no portal"
         return None
@@ -344,42 +343,28 @@ def montar_mensagem_regulacao(
             linhas.append("")
             linhas.append("📅 *DADOS DO AGENDAMENTO*")
             if data_consulta:
-                linhas.append(
-                    f"• *Data/Hora:* {escape_markdown(str(data_consulta), version=1)}"
-                )
+                linhas.append(f"• *Data/Hora:* {escape_markdown(str(data_consulta), version=1)}")
             if autorizacao:
-                linhas.append(
-                    f"• *Autorização:* `{escape_markdown(str(autorizacao), version=1)}`"
-                )
+                linhas.append(f"• *Autorização:* `{escape_markdown(str(autorizacao), version=1)}`")
 
             linhas.append("")
             linhas.append("🏥 *ESTABELECIMENTO DE SAÚDE*")
             if estabelecimento:
-                linhas.append(
-                    f"• *Unidade:* {escape_markdown(str(estabelecimento), version=1)}"
-                )
+                linhas.append(f"• *Unidade:* {escape_markdown(str(estabelecimento), version=1)}")
             if endereco:
-                linhas.append(
-                    f"• *Endereço:* {escape_markdown(str(endereco), version=1)}"
-                )
+                linhas.append(f"• *Endereço:* {escape_markdown(str(endereco), version=1)}")
             if telefone:
-                linhas.append(
-                    f"• *Telefone:* {escape_markdown(str(telefone), version=1)}"
-                )
+                linhas.append(f"• *Telefone:* {escape_markdown(str(telefone), version=1)}")
 
             if alerta:
                 linhas.append("")
-                linhas.append(
-                    f"⚠️ *AVISO DO PORTAL:* _{escape_markdown(str(alerta), version=1)}_"
-                )
+                linhas.append(f"⚠️ *AVISO DO PORTAL:* _{escape_markdown(str(alerta), version=1)}_")
         else:
             linhas.append(f"• *Posição:* {escape_markdown(str(posicao), version=1)}")
             linhas.append(f"• *Previsão:* {escape_markdown(str(previsao), version=1)}")
 
             if alerta and alerta.strip():
                 linhas.append("")
-                linhas.append(
-                    f"⚠️ *MENSAGEM DO PORTAL:*\n_{escape_markdown(str(alerta.strip()), version=1)}_"
-                )
+                linhas.append(f"⚠️ *MENSAGEM DO PORTAL:*\n_{escape_markdown(str(alerta.strip()), version=1)}_")
 
     return "\n".join(linhas)

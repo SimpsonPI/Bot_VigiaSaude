@@ -12,10 +12,21 @@ from telegram.ext import (
 )
 from admin import eh_admin
 from enquetes_storage import (
-criar_enquete, obter_enquete, registrar_voto, listar_enquetes,
-encerrar_enquete, reabrir_enquete, apagar_enquete, apagar_todas,
-calcular_resultado, salvar_mensagem, obter_mensagens,
-definir_prazo, obter_enquetes_expiradas, tempo_restante, limpar_mensagens,  # ← NOVOS
+    criar_enquete,
+    obter_enquete,
+    registrar_voto,
+    listar_enquetes,
+    encerrar_enquete,
+    reabrir_enquete,
+    apagar_enquete,
+    apagar_todas,
+    calcular_resultado,
+    salvar_mensagem,
+    obter_mensagens,
+    definir_prazo,
+    obter_enquetes_expiradas,
+    tempo_restante,
+    limpar_mensagens,  # ← NOVOS
 )
 from database import supabase
 
@@ -33,6 +44,7 @@ AGUARDANDO_CONFIRMACAO = 5
 # CRIAÇÃO DA ENQUETE
 # ═══════════════════════════════════════════════════════════
 
+
 async def iniciar_criacao_enquete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not eh_admin(update.effective_user.id):
         await update.message.reply_text("⛔ Acesso restrito a administradores.")
@@ -46,7 +58,7 @@ async def iniciar_criacao_enquete(update: Update, context: ContextTypes.DEFAULT_
         "Digite a <b>pergunta</b>:\n\n"
         "<i>Ex: Qual sua principal dificuldade no VigiaSaúde?</i>\n\n"
         "Para cancelar, use /cancelar.",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
     context.user_data["_em_fluxo_admin"] = "enquete"
 
@@ -65,7 +77,7 @@ async def receber_pergunta(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ Pergunta salva.\n\n"
         "Agora envie as <b>opções</b>, uma por linha (mín. 2, máx. 10):\n\n"
         "<i>Exemplo:</i>\n<code>Cadastrar\nCorrigir\nExcluir\nInformações do bot</code>",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
     return AGUARDANDO_OPCOES
 
@@ -77,7 +89,7 @@ async def receber_opcoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return AGUARDANDO_OPCOES
     for opt in linhas:
         if len(opt) > 100:
-            await update.message.reply_text(f"❌ A opção \"{opt[:30]}...\" excede 100 caracteres:")
+            await update.message.reply_text(f'❌ A opção "{opt[:30]}..." excede 100 caracteres:')
             return AGUARDANDO_OPCOES
 
     context.user_data["enq_opcoes"] = linhas
@@ -87,7 +99,7 @@ async def receber_opcoes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📨 Para quem deseja enviar?\n\n"
         "• Digite o <b>ID do chat</b>\n"
         "• Ou digite <b>todos</b> para enviar a todos os usuários.",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
     return AGUARDANDO_DESTINO
 
@@ -98,7 +110,7 @@ async def receber_destino(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if destino == "todos":
         try:
             res = supabase.table("assinaturas").select("chat_id").execute()
-            chat_ids = list(set(str(r["chat_id"]) for r in res.data if r.get("chat_id")))
+            chat_ids = list({str(r["chat_id"]) for r in res.data if r.get("chat_id")})
         except Exception as e:
             logger.error(f"Erro ao buscar chat_ids: {e}")
             await update.message.reply_text("❌ Erro ao buscar lista de usuários.")
@@ -118,34 +130,37 @@ async def receber_destino(update: Update, context: ContextTypes.DEFAULT_TYPE):
         alvo = f"ID <code>{chat_id_unico}</code>"
 
     # Agora pergunta o PRAZO
-    teclado = InlineKeyboardMarkup([
+    teclado = InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("⏱️ 5 min", callback_data="prazo_300"),
-            InlineKeyboardButton("⏱️ 15 min", callback_data="prazo_900"),
-            InlineKeyboardButton("⏱️ 30 min", callback_data="prazo_1800"),
-        ],
-        [
-            InlineKeyboardButton("⏰ 1 hora", callback_data="prazo_3600"),
-            InlineKeyboardButton("⏰ 6 horas", callback_data="prazo_21600"),
-            InlineKeyboardButton("🌙 24 horas", callback_data="prazo_86400"),
-        ],
-        [
-            InlineKeyboardButton("📅 3 dias", callback_data="prazo_259200"),
-            InlineKeyboardButton("📅 7 dias", callback_data="prazo_604800"),
-        ],
-        [
-            InlineKeyboardButton("♾️ Sem prazo (não expira)", callback_data="prazo_none"),
-        ],
-    ])
+            [
+                InlineKeyboardButton("⏱️ 5 min", callback_data="prazo_300"),
+                InlineKeyboardButton("⏱️ 15 min", callback_data="prazo_900"),
+                InlineKeyboardButton("⏱️ 30 min", callback_data="prazo_1800"),
+            ],
+            [
+                InlineKeyboardButton("⏰ 1 hora", callback_data="prazo_3600"),
+                InlineKeyboardButton("⏰ 6 horas", callback_data="prazo_21600"),
+                InlineKeyboardButton("🌙 24 horas", callback_data="prazo_86400"),
+            ],
+            [
+                InlineKeyboardButton("📅 3 dias", callback_data="prazo_259200"),
+                InlineKeyboardButton("📅 7 dias", callback_data="prazo_604800"),
+            ],
+            [
+                InlineKeyboardButton("♾️ Sem prazo (não expira)", callback_data="prazo_none"),
+            ],
+        ]
+    )
 
     await update.message.reply_text(
         f"✅ Destino salvo: {alvo}\n\n"
         "⏱️ Agora escolha o <b>prazo de duração</b> da enquete:\n\n"
         "<i>Após o prazo, a mensagem será removida automaticamente dos chats.</i>",
         parse_mode="HTML",
-        reply_markup=teclado
+        reply_markup=teclado,
     )
     return AGUARDANDO_PRAZO
+
 
 async def receber_prazo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -174,16 +189,18 @@ async def receber_prazo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pergunta = context.user_data.get("enq_pergunta")
     opcoes = context.user_data.get("enq_opcoes", [])
     destinos = context.user_data.get("enq_destinos", [])
-    preview = "\n".join(f"  {i+1}. {o}" for i, o in enumerate(opcoes))
+    preview = "\n".join(f"  {i + 1}. {o}" for i, o in enumerate(opcoes))
 
     alvo = f"{len(destinos)} usuário(s)" if len(destinos) > 1 else f"ID <code>{destinos[0]}</code>"
 
-    teclado = InlineKeyboardMarkup([
+    teclado = InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("✅ Confirmar", callback_data="enq_confirmar"),
-            InlineKeyboardButton("❌ Cancelar", callback_data="enq_cancelar"),
+            [
+                InlineKeyboardButton("✅ Confirmar", callback_data="enq_confirmar"),
+                InlineKeyboardButton("❌ Cancelar", callback_data="enq_cancelar"),
+            ]
         ]
-    ])
+    )
 
     await query.edit_message_text(
         "📋 <b>Confirmação Final</b>\n\n"
@@ -194,9 +211,9 @@ async def receber_prazo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⚠️ <i>Após o prazo, a mensagem será removida automaticamente.</i>\n\n"
         "Confirma?",
         parse_mode="HTML",
-        reply_markup=teclado
+        reply_markup=teclado,
     )
-    return AGUARDANDO_CONFIRMACAO   # ← MUDE DE ConversationHandler.END PARA ISSO
+    return AGUARDANDO_CONFIRMACAO  # ← MUDE DE ConversationHandler.END PARA ISSO
 
 
 async def confirmar_criacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -255,10 +272,16 @@ async def confirmar_criacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📋 Encerrar: <code>/encerrar {enquete_id}</code>\n"
             f"🗑️ Apagar: <code>/apagar_enquete {enquete_id}</code>"
         ),
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
-    for k in ("enq_pergunta", "enq_opcoes", "enq_destinos", "enq_prazo_segundos", "enq_prazo_texto"):
+    for k in (
+        "enq_pergunta",
+        "enq_opcoes",
+        "enq_destinos",
+        "enq_prazo_segundos",
+        "enq_prazo_texto",
+    ):
         context.user_data.pop(k, None)
 
     return ConversationHandler.END
@@ -270,8 +293,13 @@ async def cancelar_criacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text("❌ Criação cancelada.")
     elif update.message:
         await update.message.reply_text("❌ Criação cancelada.")
-    for k in ("enq_pergunta", "enq_opcoes", "enq_destinos",
-              "enq_prazo_segundos", "enq_prazo_texto"):
+    for k in (
+        "enq_pergunta",
+        "enq_opcoes",
+        "enq_destinos",
+        "enq_prazo_segundos",
+        "enq_prazo_texto",
+    ):
         context.user_data.pop(k, None)
     context.user_data.pop("_em_fluxo_admin", None)
     return ConversationHandler.END
@@ -280,6 +308,7 @@ async def cancelar_criacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ═══════════════════════════════════════════════════════════
 # VOTAÇÃO
 # ═══════════════════════════════════════════════════════════
+
 
 async def receber_voto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -318,6 +347,7 @@ async def voto_ja_registrado(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # ═══════════════════════════════════════════════════════════
 # RESULTADO
 # ═══════════════════════════════════════════════════════════
+
 
 async def comando_resultado(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not eh_admin(update.effective_user.id):
@@ -368,11 +398,7 @@ async def comando_resultado(update: Update, context: ContextTypes.DEFAULT_TYPE):
     botoes.append([InlineKeyboardButton("🗑️ Apagar", callback_data=f"enq_apagar_{enquete_id}")])
     botoes.append([InlineKeyboardButton("🔄 Atualizar", callback_data=f"enq_atualizar_{enquete_id}")])
 
-    await update.message.reply_text(
-        texto,
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(botoes)
-    )
+    await update.message.reply_text(texto, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(botoes))
 
 
 async def callback_resultado(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -531,7 +557,7 @@ async def comando_apagar_enquete(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text(
             "⚠️ Uso: <code>/apagar_enquete &lt;ID&gt;</code>\n"
             "Ou <code>/apagar_enquete todas</code> para apagar todas.",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         return
 
@@ -585,7 +611,7 @@ EMOJIS_LETRAS = ["🅰️", "🅱️", "🆎", "🅾️", "🅿️", "🇦", "�
 
 def barra_progresso(pct: float, tamanho: int = 16) -> str:
     """Gera barra visual em blocos. Ex: ██████░░░░░░░░░░ 40%"""
-    preenchidos = int(round((pct / 100) * tamanho))
+    preenchidos = round((pct / 100) * tamanho)
     preenchidos = max(0, min(tamanho, preenchidos))
     return "█" * preenchidos + "░" * (tamanho - preenchidos)
 
@@ -598,28 +624,18 @@ def construir_teclado(enquete_id: int, opcoes: list, voto_usuario_idx: int | Non
         if voto_usuario_idx is not None:
             # Já votou → botão inerte
             if idx == voto_usuario_idx:
-                botoes.append([InlineKeyboardButton(
-                    f"✅  {opt} (seu voto)",
-                    callback_data="voto_ja_registrado"
-                )])
+                botoes.append([InlineKeyboardButton(f"✅  {opt} (seu voto)", callback_data="voto_ja_registrado")])
             else:
-                botoes.append([InlineKeyboardButton(
-                    f"{emoji}  {opt}",
-                    callback_data="voto_ja_registrado"
-                )])
+                botoes.append([InlineKeyboardButton(f"{emoji}  {opt}", callback_data="voto_ja_registrado")])
         else:
-            botoes.append([InlineKeyboardButton(
-                f"{emoji}  {opt}",
-                callback_data=f"voto_{enquete_id}_{idx}"
-            )])
+            botoes.append([InlineKeyboardButton(f"{emoji}  {opt}", callback_data=f"voto_{enquete_id}_{idx}")])
     return InlineKeyboardMarkup(botoes)
 
 
 def mensagem_enquete_aberta(pergunta: str, opcoes: list) -> str:
     """Mensagem inicial antes de qualquer voto (sem barra)."""
     linhas_opcoes = "\n".join(
-        f"{EMOJIS_LETRAS[i] if i < len(EMOJIS_LETRAS) else '▫️'}  {opt}"
-        for i, opt in enumerate(opcoes)
+        f"{EMOJIS_LETRAS[i] if i < len(EMOJIS_LETRAS) else '▫️'}  {opt}" for i, opt in enumerate(opcoes)
     )
     return (
         "╔══════════════════════════╗\n"
@@ -648,8 +664,7 @@ def mensagem_enquete_com_resultados(enquete: dict, voto_usuario_idx: int | None 
     # ─── Caso 1: usuário ainda NÃO votou → sem resultados ───
     if voto_usuario_idx is None:
         linhas_opcoes = "\n".join(
-            f"{EMOJIS_LETRAS[i] if i < len(EMOJIS_LETRAS) else '▫️'}  {opt}"
-            for i, opt in enumerate(opcoes)
+            f"{EMOJIS_LETRAS[i] if i < len(EMOJIS_LETRAS) else '▫️'}  {opt}" for i, opt in enumerate(opcoes)
         )
         return (
             "╔══════════════════════════╗\n"
@@ -673,10 +688,7 @@ def mensagem_enquete_com_resultados(enquete: dict, voto_usuario_idx: int | None 
         emoji = EMOJIS_LETRAS[i] if i < len(EMOJIS_LETRAS) else "▫️"
         marcador = "✅ " if voto_usuario_idx == i else f"{emoji}  "
 
-        linhas.append(
-            f"{marcador}<b>{opt}</b>\n"
-            f"<code>{barra}</code> {pct:.1f}%  •  {qtd} voto(s)"
-        )
+        linhas.append(f"{marcador}<b>{opt}</b>\n<code>{barra}</code> {pct:.1f}%  •  {qtd} voto(s)")
 
     bloco_opcoes = "\n\n".join(linhas)
 
@@ -692,6 +704,7 @@ def mensagem_enquete_com_resultados(enquete: dict, voto_usuario_idx: int | None 
         "✅ <i>Seu voto foi contabilizado. Obrigado por participar!</i>"
     )
 
+
 def mensagem_inicial_enquete(enquete: dict) -> str:
     """Mensagem inicial (sem voto) com contagem regressiva."""
     pergunta = enquete.get("pergunta", "")
@@ -699,8 +712,7 @@ def mensagem_inicial_enquete(enquete: dict) -> str:
     tempo = tempo_restante(enquete)
 
     linhas_opcoes = "\n".join(
-        f"{EMOJIS_LETRAS[i] if i < len(EMOJIS_LETRAS) else '▫️'}  {opt}"
-        for i, opt in enumerate(opcoes)
+        f"{EMOJIS_LETRAS[i] if i < len(EMOJIS_LETRAS) else '▫️'}  {opt}" for i, opt in enumerate(opcoes)
     )
 
     if tempo == "sem prazo":
@@ -723,8 +735,14 @@ def mensagem_inicial_enquete(enquete: dict) -> str:
         "🔒 <i>Voto único. Os resultados aparecem após você votar.</i>"
     )
 
-async def atualizar_uma_mensagem(bot, enquete: dict, chat_id: str,
-                                  message_id: int, voto_usuario_idx: int | None = None):
+
+async def atualizar_uma_mensagem(
+    bot,
+    enquete: dict,
+    chat_id: str,
+    message_id: int,
+    voto_usuario_idx: int | None = None,
+):
     """Edita uma mensagem específica com base no voto do usuário."""
     try:
         votos = enquete.get("votos", {})
@@ -791,6 +809,7 @@ async def atualizar_enquetes_job(context: ContextTypes.DEFAULT_TYPE):
                 await atualizar_uma_mensagem(context.bot, enq, chat_id, message_id)
                 await asyncio.sleep(0.05)
 
+
 async def verificar_enquetes_expiradas(context: ContextTypes.DEFAULT_TYPE):
     """Job: apaga enquetes expiradas do chat do usuário."""
     expiradas = obter_enquetes_expiradas()
@@ -811,6 +830,7 @@ async def verificar_enquetes_expiradas(context: ContextTypes.DEFAULT_TYPE):
 
         try:
             from config import ADMIN_CHAT_ID
+
             if ADMIN_CHAT_ID:
                 await context.bot.send_message(
                     chat_id=ADMIN_CHAT_ID,
@@ -819,7 +839,7 @@ async def verificar_enquetes_expiradas(context: ContextTypes.DEFAULT_TYPE):
                         f"❓ {enq.get('pergunta', '')[:100]}\n\n"
                         f"📊 Use <code>/resultado {enq['id']}</code> para ver os votos finais."
                     ),
-                    parse_mode="HTML"
+                    parse_mode="HTML",
                 )
         except Exception as e:
             logger.error(f"Erro ao notificar admin sobre enquete expirada: {e}")

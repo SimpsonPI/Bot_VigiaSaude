@@ -2,15 +2,18 @@
 Diagnóstico rápido de problemas no banco.
 Uso: python diagnostico.py
 """
+
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from database import supabase
 
+
 def testar_operacoes(tabela: str, filtro_campo: str, filtro_valor):
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Testando tabela: {tabela}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # 1) SELECT
     try:

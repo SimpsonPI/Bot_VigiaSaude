@@ -19,6 +19,7 @@ _telegram_bot = None
 
 BENEFICIOS_PLANO = {}  # preenchido dinamicamente a partir do planos_config
 
+
 def _montar_mensagem_boas_vindas(tipo_plano, limite_ids, vencimento, is_renovacao: bool) -> str:
     info = _get_beneficios_plano(tipo_plano)
     emoji = info["emoji"]
@@ -47,13 +48,16 @@ def _montar_mensagem_boas_vindas(tipo_plano, limite_ids, vencimento, is_renovaca
         f"Qualquer dúvida, acesse /suporte. Boas consultas! 🩺"
     )
 
+
 def set_telegram_bot(bot):
     global _telegram_bot
     _telegram_bot = bot
 
+
 def _get_beneficios_plano(tipo_plano: str) -> dict:
     """Retorna dict de benefícios (nome, emoji, benefícios) do plano."""
     import planos_config as pc
+
     p = pc.get(tipo_plano)
     if not p:
         p = pc.get("degustacao")
@@ -66,12 +70,15 @@ def _get_beneficios_plano(tipo_plano: str) -> dict:
 
 def _calcular_dias_plano(tipo_plano: str) -> int:
     import planos_config as pc
+
     return pc.dias(tipo_plano)
 
 
 def _limite_por_plano(tipo_plano: str) -> int:
     import planos_config as pc
+
     return pc.limite(tipo_plano)
+
 
 async def _consultar_pagamento_mp(payment_id: str) -> dict | None:
     """Consulta o pagamento no Mercado Pago. Retorna dict ou None."""
@@ -95,9 +102,12 @@ async def _ativar_assinatura(chat_id: str, tipo_plano: str, mp_payment_id: str) 
         # 1. Detecta se é renovação (já tinha plano ativo antes)
         is_renovacao = False
         try:
-            res_ant = supabase.table("assinaturas").select(
-                "tipo_plano, status, data_vencimento"
-            ).eq("chat_id", str(chat_id)).execute()
+            res_ant = (
+                supabase.table("assinaturas")
+                .select("tipo_plano, status, data_vencimento")
+                .eq("chat_id", str(chat_id))
+                .execute()
+            )
             if res_ant.data:
                 ant = res_ant.data[0]
                 tipo_ant = str(ant.get("tipo_plano", "")).lower()
@@ -115,15 +125,18 @@ async def _ativar_assinatura(chat_id: str, tipo_plano: str, mp_payment_id: str) 
         agora = datetime.now(timezone.utc)
         vencimento = agora + timedelta(days=dias)
 
-        supabase.table("assinaturas").upsert({
-            "chat_id": str(chat_id),
-            "tipo_plano": tipo_plano,
-            "status": "ativo",
-            "data_inicio": agora.isoformat(),
-            "data_vencimento": vencimento.isoformat(),
-            "limite_ids": limite_ids,
-            "ultimo_aviso": None,   # reseta avisos de vencimento
-        }, on_conflict="chat_id").execute()
+        supabase.table("assinaturas").upsert(
+            {
+                "chat_id": str(chat_id),
+                "tipo_plano": tipo_plano,
+                "status": "ativo",
+                "data_inicio": agora.isoformat(),
+                "data_vencimento": vencimento.isoformat(),
+                "limite_ids": limite_ids,
+                "ultimo_aviso": None,  # reseta avisos de vencimento
+            },
+            on_conflict="chat_id",
+        ).execute()
 
         logger.info(
             f"✅ Assinatura {'renovada' if is_renovacao else 'ativada'} | "
@@ -134,9 +147,7 @@ async def _ativar_assinatura(chat_id: str, tipo_plano: str, mp_payment_id: str) 
         # 3. Notifica com mensagem de boas-vindas
         if _telegram_bot:
             try:
-                texto = _montar_mensagem_boas_vindas(
-                    tipo_plano, limite_ids, vencimento, is_renovacao
-                )
+                texto = _montar_mensagem_boas_vindas(tipo_plano, limite_ids, vencimento, is_renovacao)
                 await _telegram_bot.send_message(
                     chat_id=chat_id,
                     text=texto,
@@ -186,9 +197,7 @@ async def verificar_pagamentos_pendentes():
 
         if status_mp == "approved":
             try:
-                supabase.table("pagamentos_pix").update({
-                    "status": "approved"
-                }).eq("pix_id", str(pix_id)).execute()
+                supabase.table("pagamentos_pix").update({"status": "approved"}).eq("pix_id", str(pix_id)).execute()
             except Exception as e:
                 logger.warning(f"Erro ao atualizar pagamentos_pix ({pix_id}): {e}")
 
@@ -196,9 +205,7 @@ async def verificar_pagamentos_pendentes():
 
         elif status_mp in ("cancelled", "rejected", "refunded"):
             try:
-                supabase.table("pagamentos_pix").update({
-                    "status": status_mp
-                }).eq("pix_id", str(pix_id)).execute()
+                supabase.table("pagamentos_pix").update({"status": status_mp}).eq("pix_id", str(pix_id)).execute()
                 logger.info(f"Pagamento {pix_id} marcado como {status_mp}")
             except Exception as e:
                 logger.warning(f"Erro ao atualizar status de {pix_id}: {e}")
