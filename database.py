@@ -274,7 +274,7 @@ def buscar_dados_por_sus(numero_sus: str):
         sus_limpo = str(numero_sus).strip()
         res = (
             supabase.table("AlertaSUS_2.0")
-            .select("nome_paciente, data_nascimento, celular, chat_id")
+            .select("nome_paciente, data_nascimento, chat_id")
             .eq("numero_sus", sus_limpo)
             .order("id", desc=True)
             .limit(1)

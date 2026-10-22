@@ -1,6 +1,7 @@
 # handler_cadastro.py
 import os
 import logging
+from bot_seguranca import safe_callback
 
 logger = logging.getLogger(__name__)
 import re
@@ -42,8 +43,8 @@ async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     # 🔒 Sanitização: remove tags HTML e limita tamanho
     nome = nome.replace("<", "").replace(">", "").replace("&", "&amp;")[:80]
     context.user_data["nome"] = nome
-    await update.message.reply_text("Digite o número de <b>celular/WhatsApp</b> (com DDD):", parse_mode="HTML")
-    return ETAPA_CELULAR
+    await update.message.reply_text("Digite a <b>Data de Nascimento</b> (ex: DD/MM/AAAA):", parse_mode="HTML")
+    return ETAPA_NASCIMENTO
 
 
 async def receber_celular(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -305,8 +306,8 @@ async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
     context.user_data["nome"] = update.message.text.strip()
-    await update.message.reply_text("Digite o número de <b>celular/WhatsApp</b> (com DDD):", parse_mode="HTML")
-    return ETAPA_CELULAR
+    await update.message.reply_text("Digite a <b>Data de Nascimento</b> (ex: DD/MM/AAAA):", parse_mode="HTML")
+    return ETAPA_NASCIMENTO
 
 
 async def receber_celular(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -508,6 +509,7 @@ async def receber_procedimento(update: Update, context: ContextTypes.DEFAULT_TYP
     return ETAPA_LGPD
 
 
+@safe_callback
 async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
@@ -534,7 +536,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "chat_id": user_id,
         "numero_sus": dados.get("sus"),
         "nome_paciente": dados.get("nome"),
-        "celular": dados.get("celular"),
+        
         "data_nascimento": dados.get("nascimento"),
         "numero_reg": dados.get("numero_regulacao"),
         "cbo": dados.get("cbo"),
@@ -725,6 +727,7 @@ async def callback_escolher_sus(update: Update, context: ContextTypes.DEFAULT_TY
     return ConversationHandler.END
 
 
+@safe_callback
 async def callback_escolher_metodo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Processa a escolha: foto ou manual."""
     print("🔴 CLIQUE RECEBIDO NO BOTÃO MANUAL!", flush=True)
@@ -796,7 +799,7 @@ async def callback_escolher_metodo(update: Update, context: ContextTypes.DEFAULT
     try:
         res_sus = (
             supabase.table("AlertaSUS_2.0")
-            .select("numero_sus, nome_paciente, celular, data_nascimento")
+            .select("numero_sus, nome_paciente, data_nascimento")
             .eq("chat_id", user_id)
             .order("id", desc=True)
             .execute()
@@ -961,10 +964,10 @@ async def callback_confirmar_ocr(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data["_origem_ocr"] = True
 
         await query.edit_message_text(
-            "✅ <b>Dados confirmados!</b>\n\nFalta apenas completar 2 informações.\n\n📱 Digite o <b>celular/WhatsApp</b> (com DDD):",
+            "✅ <b>Dados confirmados!</b>\n\nFalta apenas 1 informação.\n\n📅 Digite a <b>Data de Nascimento</b> (ex: DD/MM/AAAA):",
             parse_mode="HTML",
         )
-        return ETAPA_CELULAR
+        return ETAPA_NASCIMENTO
 
     elif query.data == "ocr_manual":
         context.user_data["sus"] = dados.get("numero_sus")

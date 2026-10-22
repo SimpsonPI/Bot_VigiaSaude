@@ -89,6 +89,7 @@ async def mostrar_resumo_regulacao(update_or_query, context, num_reg):
             resumo = (
                 f"📋 <b>Regulação:</b> <code>{num_reg}</code>\n"
                 f"👤 <b>Paciente:</b> {reg.get('nome_paciente', 'Não informado')}\n"
+                f"📅 <b>Nascimento:</b> {reg.get('data_nascimento', 'Não informado')}\n"
                 f"🩺 <b>Especialidade / Especialidade:</b> {reg.get('cbo', 'Não informado')}\n"
                 f"📱 <b>Celular:</b> {reg.get('celular', 'Não informado')}\n"
                 f"🏥 <b>Procedimento:</b> {reg.get('procedimento', 'Não informado')}\n\n"
@@ -139,7 +140,6 @@ async def selecionar_regulacao_callback(update: Update, context: ContextTypes.DE
             f"📋 <b>Regulação selecionada:</b> <code>{num_reg}</code>\n\n"
             f"👤 <b>Paciente:</b> {dados.get('nome_paciente', 'Não informado')}\n"
             f"🩺 <b>Especialidade:</b> {dados.get('cbo', 'Não informado')}\n"
-            f"📱 <b>Celular:</b> {dados.get('celular', 'Não informado')}\n"
             f"🏥 <b>Procedimento:</b> {dados.get('procedimento', 'Não informado')}\n\n"
             f"✏️ <b>Escolha qual campo deseja alterar:</b>"
         )
@@ -147,8 +147,8 @@ async def selecionar_regulacao_callback(update: Update, context: ContextTypes.DE
         teclado = [
             [InlineKeyboardButton("🆔 ID da Regulação", callback_data="corr_campo_numero_reg")],
             [InlineKeyboardButton("👤 Nome do Paciente", callback_data="corr_campo_nome_paciente")],
+            [InlineKeyboardButton("📅 Data de Nascimento", callback_data="corr_campo_data_nascimento")],
             [InlineKeyboardButton("🩺 Especialidade / CBO", callback_data="corr_campo_cbo")],
-            [InlineKeyboardButton("📱 Celular", callback_data="corr_campo_celular")],
             [InlineKeyboardButton("🩺 Procedimento", callback_data="corr_campo_procedimento")],
             [InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")],
         ]
@@ -216,17 +216,14 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     # 2. Validações específicas por campo
     if campo in ("numero_reg", "numero_regulacao", "id_regulacao"):
-        # Remove tudo que não é dígito
         import re
-
         novo_valor_limpo = re.sub(r"\D", "", novo_valor)
 
         if len(novo_valor_limpo) != 8:
             await update.message.reply_text(
                 f"⚠️ <b>O ID da regulação deve ter 8 dígitos.</b>\n\n"
                 f"Você digitou <b>{len(novo_valor_limpo)}</b> dígito(s).\n\n"
-                "📌 <i>Confira no seu comprovante de agendamento ou na "
-                "unidade básica de saúde.</i>\n\n"
+                "📌 <i>Confira no seu comprovante de agendamento ou na unidade básica de saúde.</i>\n\n"
                 "Tente novamente ou use /corrigir para recomeçar.",
                 parse_mode="HTML",
                 reply_markup=TECLADO_MENU,
@@ -236,7 +233,7 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
         novo_valor = novo_valor_limpo
 
-        # Verifica se o novo ID já existe para este usuário
+        # Verifica duplicata
         try:
             res_dup = (
                 supabase.table("AlertaSUS_2.0")
@@ -245,7 +242,6 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 .eq("chat_id", int(chat_id) if chat_id.isdigit() else chat_id)
                 .execute()
             )
-
             if res_dup.data:
                 await update.message.reply_text(
                     f"⚠️ <b>Você já tem uma regulação com o ID {novo_valor}!</b>\n\n"
@@ -260,26 +256,24 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         except Exception as e:
             logger.error(f"Erro ao verificar duplicata: {e}")
 
-    elif campo == "celular":
-        # Valida tamanho mínimo de celular
-        import re
-
-        digitos = re.sub(r"\D", "", novo_valor)
-        if len(digitos) < 10:
+    elif campo in ("data_nascimento", "nascimento"):
+        from utils import formatar_data
+        novo_valor_formatado = formatar_data(novo_valor)
+        
+        if len(str(novo_valor_formatado)) != 10:
             await update.message.reply_text(
-                "⚠️ <b>Número de celular inválido.</b>\n\n" "Digite com DDD (ex: 86999999999).",
+                "⚠️ <b>Data inválida.</b>\nUse o formato DD/MM/AAAA (ex: 01/01/1990).",
                 parse_mode="HTML",
                 reply_markup=TECLADO_MENU,
             )
-            context.user_data.clear()
-            return ConversationHandler.END
-        novo_valor = digitos
+            return AGUARDAR_NOVO_VALOR
+            
+        novo_valor = novo_valor_formatado
 
-    # 3. Executa o UPDATE com filtro por chat_id (CRÍTICO)
+    # 3. Executa o UPDATE
     try:
         query = supabase.table("AlertaSUS_2.0").update({campo: novo_valor}).eq("numero_reg", num_reg)
 
-        # Se o chat_id for numérico, compara como int
         try:
             query = query.eq("chat_id", int(chat_id))
         except (ValueError, TypeError):
@@ -291,7 +285,9 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if campo in ("numero_reg", "numero_regulacao", "id_regulacao"):
             try:
                 query_reset = (
-                    supabase.table("AlertaSUS_2.0").update({"status_anterior": None}).eq("numero_reg", novo_valor)
+                    supabase.table("AlertaSUS_2.0")
+                    .update({"status_anterior_cidadao": None})
+                    .eq("numero_reg", novo_valor)
                 )
                 try:
                     query_reset = query_reset.eq("chat_id", int(chat_id))
@@ -302,20 +298,10 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             except Exception as e:
                 logger.warning(f"Erro ao resetar status: {e}")
 
-            # Mostra mensagem especial informando que o ID mudou
-            await update.message.reply_text(
-                f"✅ <b>ID da regulação atualizado!</b>\n\n"
-                f"• <b>ID anterior:</b> <code>{num_reg}</code>\n"
-                f"• <b>Novo ID:</b> <code>{novo_valor}</code>\n\n"
-                "💡 <i>O status desta regulação será atualizado automaticamente "
-                "na próxima verificação (a cada 6 horas). Você também pode "
-                "forçar agora com /verificar_especifico.</i>",
-                parse_mode="HTML",
-                reply_markup=TECLADO_MENU,
-            )
-        else:
-            # Exibe o resumo normal para outros campos
-            await mostrar_resumo_regulacao(update, context, num_reg)
+        await update.message.reply_text(
+            "✅ Dados atualizados com sucesso!",
+            reply_markup=TECLADO_MENU,
+        )
 
     except Exception as e:
         logger.error(f"Erro ao salvar alteração no Supabase: {e}")
@@ -328,7 +314,6 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return ConversationHandler.END
 
 
-# --- FLUXO DE EXCLUSÃO ---
 async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         user_id = update.effective_user.id
