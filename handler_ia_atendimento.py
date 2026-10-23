@@ -26,7 +26,7 @@ async def iniciar_atendimento(update: Update, context):
     reply_markup = InlineKeyboardMarkup(teclado)
 
     texto_boas_vindas = (
-        f"Olá, <b>{user_nome}</b>! Seja bem-vindo ao suporte do VigiaSaude.\n\n"
+        f"Olá, <b>{user_nome}</b>! Seja bem-vinda(o) ao suporte do VigiaSaude.\n\n"
         "Para agilizar o seu atendimento, escolha uma das opções abaixo clicando em um dos botões:\n\n"
         f'📧 <b>E-mail:</b> <a href="mailto:{EMAIL_SUPORTE}">{EMAIL_SUPORTE}</a>\n'
         f'🤖 <b>Atendimento:</b> <a href="{BOT_SUPORTE_LINK}">{BOT_SUPORTE_USERNAME}</a>'

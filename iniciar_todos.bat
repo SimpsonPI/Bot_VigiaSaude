@@ -1,25 +1,30 @@
 @echo off
-echo Iniciando os 4 bots...
+title Iniciando Bots VigiaSaude
+color 0A
+echo ==========================================
+echo    INICIANDO TODOS OS BOTS VIGIASAUDE
+echo ==========================================
 echo.
 
-cd /d "C:\Users\User\Pictures\Bot_VigiaSaude"
-start "Bot VigiaSaude" cmd /k ".venv\Scripts\activate.bat && python servidor.py start"
+echo [1/4] Iniciando VS Bot...
+start "VS Bot" cmd /k "cd /d C:\Users\User\Pictures\Bot_VigiaSaude && py -3.12 servidor.py"
+timeout /t 3 >nul
 
-timeout /t 3 /nobreak >nul
+echo [2/4] Iniciando Bot Cidadao...
+start "Bot Cidadao" cmd /k "cd /d C:\Users\User\Bot_VigiaSaude_Cidadao && py -3.12 servidor.py"
+timeout /t 3 >nul
 
-cd /d "C:\Users\User\Pictures\Atendimento_VigiaSaude_bot"
-start "Central VigiaSaude" cmd /k ".venv\Scripts\activate.bat && python servidor.py start"
+echo [3/4] Iniciando Central de Atendimento...
+start "Atendimento" cmd /k "cd /d C:\Users\User\Pictures\Atendimento_VigiaSaude_bot && py -3.12 servidor.py"
+timeout /t 3 >nul
 
-timeout /t 3 /nobreak >nul
-
-cd /d "C:\Users\User\Admin_VigiaSaude"
-start "Admin VigiaSaude" cmd /k ".venv\Scripts\activate.bat && python servidor.py start"
-
-timeout /t 3 /nobreak >nul
-
-cd /d "C:\Users\User\Bot_VigiaSaude_Cidadao"
-start "Cidadao VigiaSaude" cmd /k ".venv\Scripts\activate.bat && python servidor.py start"
+echo [4/4] Iniciando Bot Admin...
+start "Admin" cmd /k "cd /d C:\Users\User\Admin_VigiaSaude && py -3.12 servidor.py"
+timeout /t 3 >nul
 
 echo.
-echo ✅ Os 4 bots foram iniciados em janelas separadas.
-timeout /t 5
+echo ==========================================
+echo    TENTATIVA DE INICIALIZACAO CONCLUIDA
+echo ==========================================
+echo Se as janelas dos bots abriram e fecharam, veja o erro nelas.
+pause

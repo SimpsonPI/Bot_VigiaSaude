@@ -218,7 +218,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 👤 USUÁRIO COMUM → tela padrão (mantida)
     mensagem = (
-        f"👋 Olá, <b>{nome}</b>! Bem-vindo ao <b>VigiaSaude</b>.\n\n"
+        f"👋 Olá, <b>{nome}</b>! Seja bem-vindo(a) ao <b>VigiaSaude</b>.\n\n"
         f"🆔 <b>Seu ID do Telegram:</b> <code>{user.id}</code>\n\n"
         "Acesse todas as opções e comandos diretamente pelo menu nativo do Telegram "
         "(botão <b>[/]</b> ao lado da barra de digitação)."
