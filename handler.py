@@ -266,6 +266,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+    # Envia o botão de instruções de uso
+    teclado_suporte = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📚 Instruções de Uso", callback_data="suporte")]
+    ])
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="💡 <i>Precisa de ajuda com o VigiaSaúde?</i>",
+        reply_markup=teclado_suporte,
+        parse_mode="HTML"
+    )
+
 # --- TECLADO E LÓGICA COMERCIAL DE PLANOS ---
 async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
     ja_usou_degustacao = False
@@ -1726,8 +1737,10 @@ async def faq_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     texto = (
         "📌 <b>Como cadastrar uma nova regulação?</b>\n\n"
-        "• Utilize o comando <b>/cadastrar_nova</b> no menu do bot.\n"
-        "• Digite o número do seu <b>Cartão SUS</b> (15 dígitos) e o <b>ID da Regulação</b>.\n"
+                "• Utilize o comando /cadastrar_nova no menu do bot.\n\n"
+        "Você pode escolher entre duas formas:\n"
+        "📸 <b>Enviar Foto (IA):</b> Envie uma foto nítida do comprovante e a Inteligência Artificial preenche os dados automaticamente.\n"
+        "⌨️ <b>Digitar Manualmente:</b> Insira o Cartão SUS, o Nome, a Data de Nascimento e o ID da Regulação.\n\n"
         "• Siga as instruções na tela até a confirmação do cadastro."
     )
     teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Voltar", callback_data="suporte")]])
