@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 from bot_seguranca import global_error_handler
 from handler_broadcast import conv_broadcast
 from admin_panel import comando_painel, callback_painel
+from handler_termos import mostrar_termos_uso
 
 load_dotenv()
 
@@ -318,6 +319,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_cb_enq_listar, pattern="^admin_enq_listar$"))
     app.add_handler(CallbackQueryHandler(admin_cb_enq_info, pattern="^admin_enq_info$"))
     app.add_handler(CallbackQueryHandler(callback_painel, pattern="^painel_"))  # â† por Ãºltimo
+    app.add_handler(CallbackQueryHandler(mostrar_termos_uso, pattern="^termos_uso$"))
     app.add_handler(CommandHandler("estatisticas", comando_estatisticas))
     app.add_handler(CommandHandler("ativos", comando_listar_ativos))
     app.add_handler(CommandHandler("detalhes", comando_detalhes))

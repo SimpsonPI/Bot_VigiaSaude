@@ -34,6 +34,7 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
     for p in pc.planos_pagos():
         keyboard.append([InlineKeyboardButton(p["nome_botao"], callback_data=f"plano_{p['chave']}")])
 
+    keyboard.append([InlineKeyboardButton("📜 Termos de Uso", callback_data="termos_uso")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -199,6 +200,7 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             keyboard_botoes = [
                 [InlineKeyboardButton("💳 Pagar via Pix", callback_data=f"pix_{plano_chave}")],
+                [InlineKeyboardButton("📜 Termos de Uso", callback_data="termos_uso")],
                 [InlineKeyboardButton("⬅️ Voltar aos Planos", callback_data="planos")],
             ]
 

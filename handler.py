@@ -265,17 +265,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
 
-
     # Envia o botão de instruções de uso
-    teclado_suporte = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📚 Instruções de Uso", callback_data="suporte")]
-    ])
+    teclado_suporte = InlineKeyboardMarkup([[InlineKeyboardButton("📚 Instruções de Uso", callback_data="suporte")]])
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text="💡 <i>Precisa de ajuda com o VigiaSaúde?</i>",
         reply_markup=teclado_suporte,
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
+
 
 # --- TECLADO E LÓGICA COMERCIAL DE PLANOS ---
 async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
@@ -440,9 +438,7 @@ async def admin_cb_enquetes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             total = ativas = 0
 
-        texto = (
-            "📋 <b>ENQUETES</b>\n\n" f"• Total: <b>{total}</b>\n" f"• Ativas: <b>{ativas}</b>\n\n" "Escolha uma ação:"
-        )
+        texto = f"📋 <b>ENQUETES</b>\n\n• Total: <b>{total}</b>\n• Ativas: <b>{ativas}</b>\n\nEscolha uma ação:"
 
         botoes = InlineKeyboardMarkup(
             [
@@ -854,11 +850,17 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         upgrades = [p for p in pc.planos_pagos() if p["limite_ids"] > limite_atual]
         if upgrades:
             botoes = [[InlineKeyboardButton(p["nome_botao"], callback_data=f"plano_{p['chave']}")] for p in upgrades]
+            botoes.append([InlineKeyboardButton("📜 Termos de Uso", callback_data="termos_uso")])
             botoes.append([InlineKeyboardButton("⬅️ Voltar ao Suporte", callback_data="suporte")])
             teclado = InlineKeyboardMarkup(botoes)
         else:
-            # Já tem o plano máximo (semestral) → sem botões
-            teclado = None
+            # Já tem o plano máximo (semestral) → apenas botões de termos e voltar
+            teclado = InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("📜 Termos de Uso", callback_data="termos_uso")],
+                    [InlineKeyboardButton("⬅️ Voltar ao Suporte", callback_data="suporte")],
+                ]
+            )
 
     else:
         # Sem plano ou degustação → menu completo
@@ -1586,7 +1588,7 @@ conv_cadastro = ConversationHandler(
             CallbackQueryHandler(callback_reuso_dados, pattern="^reuso_(sim|nao)$"),
         ],
         ETAPA_NOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nome)],
-#         ETAPA_CELULAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_celular)],
+        #         ETAPA_CELULAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_celular)],
         ETAPA_NASCIMENTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nascimento)],
         ETAPA_REGULACAO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_regulacao)],
         ETAPA_CBO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_cbo)],
@@ -1737,7 +1739,7 @@ async def faq_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     texto = (
         "📌 <b>Como cadastrar uma nova regulação?</b>\n\n"
-                "• Utilize o comando /cadastrar_nova no menu do bot.\n\n"
+        "• Utilize o comando /cadastrar_nova no menu do bot.\n\n"
         "Você pode escolher entre duas formas:\n"
         "📸 <b>Enviar Foto (IA):</b> Envie uma foto nítida do comprovante e a Inteligência Artificial preenche os dados automaticamente.\n"
         "⌨️ <b>Digitar Manualmente:</b> Insira o Cartão SUS, o Nome, a Data de Nascimento e o ID da Regulação.\n\n"
@@ -1803,9 +1805,7 @@ async def mostrar_email_suporte(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
 
     await query.message.reply_text(
-        "📧 <b>Email de Suporte</b>\n\n"
-        "<code>suportevigiasaude@gmail.com</code>\n\n"
-        "Toque no email acima para copiar.",
+        "📧 <b>Email de Suporte</b>\n\n<code>suportevigiasaude@gmail.com</code>\n\nToque no email acima para copiar.",
         parse_mode="HTML",
     )
 
@@ -2033,9 +2033,7 @@ async def enviar_alerta_expiracao(context, chat_id: str, tipo_plano: str, dias: 
         )
         urgencia = "\n🔥 <i>Não deixe para depois — leva menos de 1 minuto!</i>"
 
-    texto = (
-        f"{titulo}\n\n" f"{texto_corpo}\n\n" f"{pc.texto_lista_planos()}\n" f"{urgencia}\n\n" "👇 Escolha seu plano:"
-    )
+    texto = f"{titulo}\n\n{texto_corpo}\n\n{pc.texto_lista_planos()}\n{urgencia}\n\n👇 Escolha seu plano:"
 
     teclado = InlineKeyboardMarkup(
         [
