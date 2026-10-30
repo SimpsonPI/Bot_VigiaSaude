@@ -3,6 +3,7 @@ import asyncio
 import logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
+from telegram.error import RetryAfter
 
 from database import supabase
 from utils import (
@@ -257,7 +258,7 @@ async def broadcast_receber_conteudo(update: Update, context: ContextTypes.DEFAU
         preview_texto = msg.text
     else:
         await msg.reply_text(
-            "⚠️ Tipo de conteúdo não suportado.\n\n" "Envie apenas <b>texto</b>, <b>foto</b> ou <b>vídeo</b>.",
+            "⚠️ Tipo de conteúdo não suportado.\n\nEnvie apenas <b>texto</b>, <b>foto</b> ou <b>vídeo</b>.",
             parse_mode="HTML",
         )
         return BROADCAST_ENVIAR_CONTEUDO
@@ -326,7 +327,7 @@ async def broadcast_receber_conteudo(update: Update, context: ContextTypes.DEFAU
         # Volta para a prévia (reprocessa)
         novo_estado = "ATIVADA" if not atual else "DESATIVADA"
         await query.edit_message_text(
-            f"👋 Saudação automática <b>{novo_estado}</b>.\n\n" "Envie qualquer coisa para gerar nova prévia.",
+            f"👋 Saudação automática <b>{novo_estado}</b>.\n\nEnvie qualquer coisa para gerar nova prévia.",
         )
         return BROADCAST_ENVIAR_CONTEUDO
 
@@ -367,8 +368,7 @@ async def broadcast_confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Mensagem de progresso
     await query.edit_message_text(
-        f"📤 <b>Enviando para {len(chat_ids)} usuário(s)...</b>\n\n"
-        "<i>Aguarde — isso pode levar alguns segundos.</i>",
+        f"📤 <b>Enviando para {len(chat_ids)} usuário(s)...</b>\n\n<i>Aguarde — isso pode levar alguns segundos.</i>",
         parse_mode="HTML",
     )
 
@@ -423,7 +423,15 @@ async def broadcast_confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE
                 )
 
             enviados += 1
+            # Pausa de segurança entre mensagens (300ms)
             await asyncio.sleep(0.3)
+
+        # 🛡️ A PROTEÇÃO CONTRA BLOQUEIO DO TELEGRAM
+        except RetryAfter as e:
+            logger.warning(f"⚠️ Limite do Telegram atingido. Pausando por {e.retry_after}s...")
+            await asyncio.sleep(e.retry_after + 1)  # Espera o tempo pedido + 1 seg de segurança
+            falhas += 1  # Contabiliza como falha temporária (ou você pode tentar de novo depois)
+            detalhes_falhas.append(f"• <code>{cid}</code> → ⏳ Rate limit (pausou {e.retry_after}s)")
 
         except Exception as e:
             falhas += 1
@@ -443,9 +451,7 @@ async def broadcast_confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE
             logger.error(f"Falha broadcast para {cid}: {e!r}")
 
     # Relatório final
-    texto_final = (
-        "✅ <b>Broadcast finalizado!</b>\n\n" f"📤 <b>Enviadas:</b> {enviados}\n" f"❌ <b>Falhas:</b> {falhas}\n"
-    )
+    texto_final = f"✅ <b>Broadcast finalizado!</b>\n\n📤 <b>Enviadas:</b> {enviados}\n❌ <b>Falhas:</b> {falhas}\n"
 
     if detalhes_falhas:
         texto_final += "\n📋 <b>Detalhes das falhas:</b>\n" + "\n".join(detalhes_falhas[:10])
@@ -454,7 +460,7 @@ async def broadcast_confirmar(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if bloqueados:
         texto_final += (
-            f"\n\n💡 <i>{len(bloqueados)} usuário(s) bloquearam o bot. " "Considere removê-los com /bloquear.</i>"
+            f"\n\n💡 <i>{len(bloqueados)} usuário(s) bloquearam o bot. Considere removê-los com /bloquear.</i>"
         )
 
     try:

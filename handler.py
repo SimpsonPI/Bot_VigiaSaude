@@ -187,9 +187,6 @@ async def callback_abrir_termo_privacidade(update: Update, context: ContextTypes
 
 # --- HANDLER DO COMANDO /START E /INICIAR ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler principal do /start ou /iniciar.
-    Admin: dashboard com metricas. Comum: tela padrao.
-    """
     user = update.effective_user
     nome = user.first_name or "Usuário"
 
@@ -264,15 +261,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=obter_menu_principal(),
             parse_mode="HTML",
         )
-
-    # Envia o botão de instruções de uso
-    teclado_suporte = InlineKeyboardMarkup([[InlineKeyboardButton("📚 Instruções de Uso", callback_data="suporte")]])
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text="💡 <i>Precisa de ajuda com o VigiaSaúde?</i>",
-        reply_markup=teclado_suporte,
-        parse_mode="HTML",
-    )
 
 
 # --- TECLADO E LÓGICA COMERCIAL DE PLANOS ---
@@ -732,22 +720,6 @@ async def admin_cb_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin: dashboard. Usuário: tela de planos."""
     user_id = update.effective_user.id
-
-    # 👑 Admin → dashboard profissional
-    from config import is_admin
-
-    if is_admin(user_id):
-        texto, teclado = await _montar_painel_admin(user_id)
-        if update.callback_query:
-            await update.callback_query.answer()
-            try:
-                await update.callback_query.edit_message_text(texto, parse_mode="HTML", reply_markup=teclado)
-            except Exception:
-                await update.callback_query.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
-        else:
-            await update.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
-        return
-
     chat_id_str = str(user_id)
 
     # ─── Busca dados do usuário no Supabase ───
@@ -806,7 +778,6 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tipo_formatado = pc.nome(tipo_plano)
         dias_txt = f"{dias_restantes} dia(s)" if dias_restantes is not None else "—"
 
-        # Alerta se estiver perto de vencer
         alerta_venc = ""
         if dias_restantes is not None and dias_restantes <= 3:
             alerta_venc = "\n⚠️ <b>Atenção: seu plano está prestes a vencer!</b>\n"
@@ -836,16 +807,12 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⚡ <b>Liberação:</b> Instantânea após a confirmação\n"
     )
 
-    # ─── Junta tudo ───
     texto_final = cabecalho + planos_txt
 
     # ─── Cria os botões (inteligente: só upgrades) ───
     if is_cortesia:
-        # Cortesia: sem botões (acesso ilimitado)
         teclado = None
-
     elif is_ativo and not is_degustacao:
-        # Plano pago ativo → mostra só planos com MAIS regulações
         limite_atual = plano_info.get("limite_ids") or 0
         upgrades = [p for p in pc.planos_pagos() if p["limite_ids"] > limite_atual]
         if upgrades:
@@ -854,16 +821,13 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
             botoes.append([InlineKeyboardButton("⬅️ Voltar ao Suporte", callback_data="suporte")])
             teclado = InlineKeyboardMarkup(botoes)
         else:
-            # Já tem o plano máximo (semestral) → apenas botões de termos e voltar
             teclado = InlineKeyboardMarkup(
                 [
                     [InlineKeyboardButton("📜 Termos de Uso", callback_data="termos_uso")],
                     [InlineKeyboardButton("⬅️ Voltar ao Suporte", callback_data="suporte")],
                 ]
             )
-
     else:
-        # Sem plano ou degustação → menu completo
         teclado = await obter_menu_planos(user_id)
 
     # ─── Envia ───
@@ -1330,6 +1294,58 @@ async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
                 continue
 
             verificadas += 1
+
+            # --- INÍCIO LÓGICA AVISO DE 7, 3 E 1 DIA ---
+            data_consulta_str = resultado_fms.get("data_consulta")
+            if data_consulta_str:
+                try:
+                    # Ex: "03/11/2026 - 14:00" -> pega só a data "03/11/2026"
+                    data_pura = str(data_consulta_str).split(" - ")[0].strip()
+                    data_dt = datetime.strptime(data_pura, "%d/%m/%Y").date()
+
+                    # Pega a data de hoje no fuso do Brasil (UTC-3)
+                    from datetime import timedelta
+
+                    hoje_br = (datetime.now(timezone.utc) - timedelta(hours=3)).date()
+                    dias_faltando = (data_dt - hoje_br).days
+
+                    # Se for marco de 7, 3 ou 1 dia
+                    if dias_faltando in (7, 3, 1):
+                        ultimo_aviso = reg.get("ultimo_aviso_dias") or 0
+
+                        # Se ainda não enviou esse aviso específico
+                        if ultimo_aviso != dias_faltando:
+                            ativo_aviso, _ = verificar_plano_ativo(chat_id)
+                            if ativo_aviso:
+                                msg_aviso = (
+                                    f"🔔 <b>Lembrete de Agendamento!</b>\n\n"
+                                    f"Faltam exatamente <b>{dias_faltando} dias</b> para a sua consulta/exame.\n\n"
+                                    f"👤 <b>Paciente:</b> {escape(str(reg.get('nome_paciente') or 'Não informado'))}\n"
+                                    f"🩺 <b>Procedimento:</b> {escape(str(reg.get('procedimento') or 'Não informado'))}\n"
+                                    f"📅 <b>Data:</b> {escape(str(data_consulta_str))}\n"
+                                    f"📍 <b>Local:</b> {escape(str(resultado_fms.get('estabelecimento') or 'Ver no comprovante'))}\n\n"
+                                    f"⚠️ <i>Não esqueça de levar seus documentos e o Cartão SUS!</i>"
+                                )
+                                try:
+                                    await context.bot.send_message(
+                                        chat_id=int(chat_id), text=msg_aviso, parse_mode="HTML"
+                                    )
+
+                                    # Salva no banco que o aviso foi enviado
+                                    from database import supabase as sb_aviso
+
+                                    sb_aviso.table("AlertaSUS_2.0").update({"ultimo_aviso_dias": dias_faltando}).eq(
+                                        "numero_reg", str(num_reg)
+                                    ).eq("chat_id", str(chat_id)).execute()
+
+                                    logger.info(
+                                        f"📅 Aviso de {dias_faltando} dias enviado para {num_reg} (chat {chat_id})"
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Erro ao enviar aviso de {dias_faltando} dias: {e}")
+                except Exception as e:
+                    logger.error(f"Erro ao processar data de aviso para {num_reg}: {e}")
+            # --- FIM LÓGICA AVISO DE 7, 3 E 1 DIA ---
 
             deve, motivo = _deve_notificar(resultado_fms, status_ant, posicao_ant)
 
