@@ -3,6 +3,7 @@ from bot_seguranca import global_error_handler
 from handler_broadcast import conv_broadcast
 from admin_panel import comando_painel, callback_painel
 from handler_termos import mostrar_termos_uso
+from telegram.ext import PicklePersistence
 
 load_dotenv()
 
@@ -263,6 +264,7 @@ def main():
         # .concurrent_updates(False)
         .request(request)
         .get_updates_request(request)
+        .persistence(persistence)  # <-- ADICIONE ESTA LINHA
         .post_init(post_init)
         .build()
     )
@@ -406,8 +408,10 @@ def main():
 
     logger.info("Iniciando o bot VigiaSaude via polling...")
     app.add_error_handler(global_error_handler)
-    app.run_polling(drop_pending_updates=True)
+    app.run_polling(drop_pending_updates=False)
 
+
+persistence = PicklePersistence(filepath="bot_persistencia.pickle")
 
 if __name__ == "__main__":
     main()
