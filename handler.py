@@ -187,48 +187,52 @@ async def callback_abrir_termo_privacidade(update: Update, context: ContextTypes
 
 # --- HANDLER DO COMANDO /START E /INICIAR ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from utils import TECLADO_MENU
+    from config import is_admin
+    from telegram import ReplyKeyboardRemove
+
     user = update.effective_user
     nome = user.first_name or "Usuário"
 
     # 👑 ADMIN → dashboard com metricas do sistema
-    from config import is_admin
-
     if is_admin(user.id):
         texto_admin, teclado_admin = await _montar_painel_admin(user.id)
 
         if update.callback_query:
-            try:
-                await update.callback_query.answer()
-                await update.callback_query.edit_message_text(
-                    texto_admin, parse_mode="HTML", reply_markup=teclado_admin
-                )
-            except Exception:
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=texto_admin,
-                    parse_mode="HTML",
-                    reply_markup=teclado_admin,
-                )
-        elif update.message:
-            await update.message.reply_text(texto_admin, parse_mode="HTML", reply_markup=teclado_admin)
+            await update.callback_query.answer()
+            chat_id = update.callback_query.message.chat_id
+        else:
+            chat_id = update.message.chat_id
+
+        # 1. Limpa o teclado antigo para forçar o Telegram a atualizar
+        msg_temp = await context.bot.send_message(chat_id=chat_id, text="⏳", reply_markup=ReplyKeyboardRemove())
+        await msg_temp.delete()
+
+        # 2. Envia o Painel Admin (botões inline)
+        await context.bot.send_message(chat_id=chat_id, text=texto_admin, parse_mode="HTML", reply_markup=teclado_admin)
+
+        # 3. Envia o teclado físico na tela
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="⬇️ <i>Selecione um comando no menu abaixo:</i>",
+            reply_markup=TECLADO_MENU,
+            parse_mode="HTML",
+        )
         return
 
-    # 👤 USUÁRIO COMUM → tela padrão (mantida)
+    # 👤 USUÁRIO COMUM
     mensagem = (
         f"👋 Olá, <b>{nome}</b>! Seja bem-vindo(a) ao <b>VigiaSaude</b>.\n\n"
         f"🆔 <b>Seu ID do Telegram:</b> <code>{user.id}</code>\n\n"
-        "Acesse todas as opções e comandos diretamente pelo menu nativo do Telegram "
-        "(botão <b>[/]</b> ao lado da barra de digitação)."
+        "Acesse as opções clicando nos botões abaixo:"
     )
 
-    # 🆕 Aviso de limites (apenas para usuários comuns)
     try:
         from verificacao_limite import pode_verificar, ADMIN_ID
 
         if user.id != ADMIN_ID:
             _, _, rest_todas = pode_verificar(str(user.id), "todas")
             _, _, rest_esp = pode_verificar(str(user.id), "especifico")
-
             mensagem += (
                 f"\n\n📊 <b>Seus limites de hoje:</b>\n"
                 f"• <b>Verificar todas:</b> {rest_todas}/2\n"
@@ -239,28 +243,27 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.warning(f"Erro ao carregar limites em /start: {e}")
 
-    # Se veio de clique em botão (callback_query)
+    # ---------------------------------------------------------
+    # O SEGREDO ESTÁ AQUI: REMOVER O TECLADO ANTES DE ENVIAR O NOVO
+    # ---------------------------------------------------------
     if update.callback_query:
-        try:
-            await update.callback_query.answer()
-            await update.callback_query.edit_message_text(
-                mensagem, parse_mode="HTML", reply_markup=obter_menu_principal()
-            )
-        except Exception:
-            # Se não conseguir editar (mensagem antiga), envia nova
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=mensagem,
-                parse_mode="HTML",
-                reply_markup=obter_menu_principal(),
-            )
-    # Se veio de comando /start ou /iniciar
-    elif update.message:
-        await update.message.reply_text(
-            mensagem,
-            reply_markup=obter_menu_principal(),
-            parse_mode="HTML",
-        )
+        await update.callback_query.answer()
+        chat_id = update.callback_query.message.chat_id
+    else:
+        chat_id = update.message.chat_id
+
+    # 1. Envia uma mensagem "invisível" removendo o teclado (limpa o cache)
+    msg_temp = await context.bot.send_message(chat_id=chat_id, text="⏳", reply_markup=ReplyKeyboardRemove())
+    # 2. Apaga essa mensagem para não poluir a tela
+    await msg_temp.delete()
+
+    # 3. Envia a mensagem final com o teclado com as barras
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=mensagem,
+        parse_mode="HTML",
+        reply_markup=TECLADO_MENU,
+    )
 
 
 # --- TECLADO E LÓGICA COMERCIAL DE PLANOS ---

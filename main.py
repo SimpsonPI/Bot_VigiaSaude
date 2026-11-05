@@ -4,6 +4,8 @@ from handler_broadcast import conv_broadcast
 from admin_panel import comando_painel, callback_painel
 from handler_termos import mostrar_termos_uso
 from telegram.ext import PicklePersistence
+from handler_recursos import comando_recursos
+from handler_meus_cadastros import comando_meus_cadastros
 
 load_dotenv()
 
@@ -291,18 +293,19 @@ def main():
     app.add_handler(conv_envio_midia)
     app.add_handler(conv_criar_enquete)
     app.add_handler(conv_broadcast)
-    # Comandos pÃºblicos
+    # Comandos públicos
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("iniciar", start))
     app.add_handler(CommandHandler("menu", start))
-    # Redundante: já tratado no conv_cadastro
+
+    app.add_handler(CommandHandler("meus_cadastros", comando_meus_cadastros))
     app.add_handler(CommandHandler("verificar_todos", comando_verificar_todas))
     app.add_handler(CommandHandler("verificar_especifico", iniciar_verificar_especifico))
     app.add_handler(CommandHandler("corrigir", iniciar_corrigir))
     app.add_handler(CommandHandler("planos", comando_planos))
-    app.add_handler(CommandHandler("privacidade", comando_privacidade))
+    app.add_handler(CommandHandler("recursos", comando_recursos))
     app.add_handler(CommandHandler("suporte", menu_suporte))
-
+    app.add_handler(CommandHandler("privacidade", comando_privacidade))
     # Comandos admin
     # Painel admin interativo
     app.add_handler(CommandHandler("painel", comando_painel))
