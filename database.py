@@ -119,8 +119,7 @@ def ativar_ou_atualizar_assinatura(telegram_id: int, tipo_plano: str):
                         if venc_dt > agora:
                             base = venc_dt  # usa o vencimento futuro
                             logger.info(
-                                f"📅 Soma aplicada: base = {base.strftime('%d/%m/%Y')} "
-                                f"(vencimento atual ainda ativo)"
+                                f"📅 Soma aplicada: base = {base.strftime('%d/%m/%Y')} (vencimento atual ainda ativo)"
                             )
             except Exception as e:
                 logger.warning(f"Erro ao checar vencimento atual (usando 'agora'): {e}")
@@ -140,7 +139,7 @@ def ativar_ou_atualizar_assinatura(telegram_id: int, tipo_plano: str):
 
         resposta = supabase.table("assinaturas").upsert(dados, on_conflict="chat_id").execute()
         logger.info(
-            f"✅ Assinatura '{tipo_plano}' atualizada para {telegram_id} | " f"Vence: {vencimento.strftime('%d/%m/%Y')}"
+            f"✅ Assinatura '{tipo_plano}' atualizada para {telegram_id} | Vence: {vencimento.strftime('%d/%m/%Y')}"
         )
         return resposta.data if resposta else True
     except Exception as e:
@@ -287,3 +286,29 @@ def buscar_dados_por_sus(numero_sus: str):
     except Exception as e:
         logger.error(f"Erro ao buscar dados por SUS: {e}")
         return None
+
+
+def obter_limite_plano(user_id: int) -> int:
+    """Retorna o limite de cadastros baseado no plano ativo do usuário."""
+    try:
+        from database import supabase  # Ajuste se o seu import for diferente
+
+        res = supabase.table("assinaturas").select("tipo_plano").eq("chat_id", user_id).execute()
+
+        if not res.data:
+            return 0  # Se não tem assinatura, limite é 0
+
+        tipo_plano = str(res.data[0].get("tipo_plano", "")).lower()
+
+        # Ajuste as palavras abaixo conforme os nomes EXATOS dos seus planos no banco
+        if "mensal" in tipo_plano:
+            return 6
+        elif "trimestral" in tipo_plano:
+            return 8
+        elif "semestral" in tipo_plano:
+            return 12
+
+        return 0
+    except Exception as e:
+        print(f"Erro ao obter limite do plano: {e}")
+        return 0

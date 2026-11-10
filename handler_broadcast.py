@@ -4,16 +4,22 @@ import logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 from telegram.error import RetryAfter
+from utils import obter_teclado_menu
 
 from database import supabase
 from utils import (
     BROADCAST_ESCOLHER_SEGMENTO,
     BROADCAST_ENVIAR_CONTEUDO,
     BROADCAST_CONFIRMAR_ENVIO,
-    TECLADO_MENU,
+    obter_teclado_menu,  # <-- Importa a função, sem parênteses
 )
 
+# A linha de baixo sai do import e vira código normal
+# (Remova a vírgula do final se houver)
+# teclado = obter_teclado_menu(0)
+
 logger = logging.getLogger(__name__)
+
 
 # Guarda o ID do admin que iniciou o broadcast (para confirmar antes de enviar)
 ADMIN_ID = 5242040324  # ← ajuste se necessário
@@ -487,7 +493,9 @@ def _montar_saudacao(nome: str, ativa: bool = True) -> str:
 async def cancelar_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancela o broadcast em qualquer etapa."""
     if update.message:
-        await update.message.reply_text("❌ Broadcast cancelado.", reply_markup=TECLADO_MENU)
+        await update.message.reply_text(
+            "❌ Broadcast cancelado.", reply_markup=obter_teclado_menu(update.effective_user.id)
+        )
     elif update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.edit_message_text("❌ Broadcast cancelado.")

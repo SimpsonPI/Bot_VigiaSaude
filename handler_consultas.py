@@ -158,14 +158,20 @@ async def enviar_resposta(update: Update, texto: str, parse_mode="HTML", reply_m
 
 
 async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # 🔒 Bloqueio de plano expirado
-    from handler import verificar_plano_ativo, enviar_alerta_plano_expirado
+    # --- 🛑 BLOQUEIO PARA USUÁRIOS COMUNS ---
+    from verificacao_limite import _eh_admin
 
     user_id = update.effective_user.id
-    ativo, _info = verificar_plano_ativo(user_id)
-    if not ativo:
-        await enviar_alerta_plano_expirado(update, context)
+    if not _eh_admin(user_id):
+        await update.message.reply_text(
+            "⚠️ <b>Função restrita a administradores.</b>\n\n"
+            "Utilize o comando <b>/verificar_especifico</b> ou o painel <b>/meus_cadastros</b> para consultar suas regulações.",
+            parse_mode="HTML",
+        )
         return
+    # ----------------------------------------
+
+    # ... (o resto do código original continua aqui embaixo)
 
     # 🆕 LIMITE DIÁRIO + INTERVALO
     from verificacao_limite import pode_verificar, registrar_verificacao
@@ -204,7 +210,7 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
 
     if not regulacoes:
         await update.message.reply_text(
-            "ℹ️ <b>Você não possui nenhuma regulação cadastrada.</b>\n" "Use o menu para cadastrar.",
+            "ℹ️ <b>Você não possui nenhuma regulação cadastrada.</b>\nUse o menu para cadastrar.",
             parse_mode="HTML",
         )
         return
@@ -461,7 +467,7 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
         try:
             alvo = update.effective_message
             if alvo:
-                await alvo.reply_text("⚠️ Ocorreu um erro ao consultar esta regulação. " "Tente novamente mais tarde.")
+                await alvo.reply_text("⚠️ Ocorreu um erro ao consultar esta regulação. Tente novamente mais tarde.")
         except Exception:
             pass
     finally:

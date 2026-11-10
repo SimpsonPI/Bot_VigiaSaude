@@ -9,7 +9,7 @@ LIMITE_VERIFICAR_TODAS = 2
 LIMITE_VERIFICAR_ESPECIFICO = 5
 
 # Intervalo mínimo entre 2 consultas do mesmo usuário (segundos)
-INTERVALO_MINIMO = 60
+INTERVALO_MINIMO = 180
 
 # Admin isento de limites
 ADMIN_ID = 5242040324

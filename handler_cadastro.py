@@ -2,6 +2,7 @@
 import os
 import logging
 from bot_seguranca import safe_callback
+from utils import obter_teclado_menu
 
 logger = logging.getLogger(__name__)
 import re
@@ -15,7 +16,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from database import salvar_regulacao, registrar_consentimento_lgpd
 from utils import (
     DISCLAIMER_TEXTO,
-    TECLADO_MENU,
+    obter_teclado_menu,
     ETAPA_SUS,
     ETAPA_NOME,
     ETAPA_CELULAR,
@@ -96,6 +97,7 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
     )
     from database import supabase, iniciar_degustacao
     import logging
+    from datetime import datetime  # Importação necessária para o histórico
 
     logger = logging.getLogger(__name__)
 
@@ -151,7 +153,7 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
         else:
             info = info_ativo
 
-    # 4. Verifica LIMITE de regulações
+    # 4. Verifica LIMITE de regulações ATIVAS
     try:
         res_count = supabase.table("AlertaSUS_2.0").select("id", count="exact").eq("chat_id", user_id).execute()
         total_regs = (
@@ -163,7 +165,6 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
         logger.error(f"Erro ao contar regulações: {e}")
         total_regs = 0
 
-        # Cortesia = acesso ilimitado, nunca bloqueia
     # Cortesia e admin = acesso ilimitado
     from config import is_admin
 
@@ -174,9 +175,47 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
         limite = _obter_limite_plano(info)
 
     if total_regs >= limite:
-        logger.info(f"⏸️ Limite atingido: {total_regs}/{limite} para {user_id}")
+        logger.info(f"⏸️ Limite de ativos atingido: {total_regs}/{limite} para {user_id}")
         await enviar_oferta_limite_atingido(update, context, total_regs, limite)
         return ConversationHandler.END
+
+    # =========================================================
+    # 🛡️ NOVO BLOQUEIO: HISTÓRICO DE CADASTROS NO MÊS (FICHAS)
+    # =========================================================
+    # Se o usuário não for admin/cortesia, valida quantas fichas ele já gastou no mês
+    if limite != 999:
+        mes_atual = datetime.now().strftime("%Y-%m")
+        try:
+            res_hist = (
+                supabase.table("historico_cadastros")
+                .select("id", count="exact")
+                .eq("chat_id", user_id)
+                .eq("mes_referencia", mes_atual)
+                .execute()
+            )
+            cadastros_feitos = (
+                res_hist.count
+                if hasattr(res_hist, "count") and res_hist.count is not None
+                else len(res_hist.data or [])
+            )
+        except Exception as e:
+            logger.error(f"Erro ao checar histórico de cadastros: {e}")
+            cadastros_feitos = 0
+
+        if cadastros_feitos >= limite:
+            logger.info(f"⏸️ Limite de histórico (fichas) atingido: {cadastros_feitos}/{limite} para {user_id}")
+
+            # Reutiliza a mesma função de oferta de limite, mas com uma mensagem adaptada
+            msg_alvo = update.callback_query.message if update.callback_query else update.message
+            await msg_alvo.reply_text(
+                f"⛔ <b>Limite de cadastros mensais atingido!</b>\n\n"
+                f"Seu plano permite até <b>{limite} cadastros por mês</b>.\n"
+                f"Você já utilizou todas as suas {limite} vagas neste mês, mesmo que tenha excluído alguma regulação.\n\n"
+                f"💡 <i>Para cadastrar novas regulações, faça o upgrade do seu plano ou aguarde a renovação no próximo mês.</i>",
+                parse_mode="HTML",
+            )
+            return ConversationHandler.END
+    # =========================================================
 
     # 5. Menu: foto ou manual
     context.user_data.clear()
@@ -217,7 +256,7 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     if not numero_sus:
         await update.message.reply_text(
-            "⚠️ Não consegui identificar nenhum dígito.\n\n" "Digite o número do Cartão SUS (apenas números):"
+            "⚠️ Não consegui identificar nenhum dígito.\n\nDigite o número do Cartão SUS (apenas números):"
         )
         return ETAPA_SUS
 
@@ -285,7 +324,7 @@ async def callback_reuso_dados(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data["procedimento"] = dados.get("procedimento")
 
         await query.edit_message_text(
-            "✅ <b>Dados carregados com sucesso!</b>\n\n" "Agora digite apenas o <b>Número da Regulação</b>:",
+            "✅ <b>Dados carregados com sucesso!</b>\n\nAgora digite apenas o <b>Número da Regulação</b>:",
             parse_mode="HTML",
         )
         return ETAPA_REGULACAO
@@ -452,8 +491,8 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     # ✅ FORA DO TRY/EXCEPT — sempre pede a especialidade no fluxo normal
     await update.message.reply_text(
-        "Agora informe a <b>Especialidade</b> da consulta/exame\n"
-        "<i>(Ex: Consulta / Exame)</i>\n\n"
+        "Agora informe a <b>Especialidade</b>\n"
+        "<i>(Ex: Cardiologista / Ultrassonografia)</i>\n\n"
         "Se não souber, digite <code>0</code> para pular.",
         parse_mode="HTML",
     )
@@ -471,7 +510,7 @@ async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await update.message.reply_text(
             "⏭️ <b>Especialidade pulada.</b>\n\n"
             "Agora informe a <b>descrição do Procedimento/Exame</b>:\n"
-            "<i>(Ex: Consulta / Exame)</i>",
+            "<i>(Consulta ou Exame)</i>",
             parse_mode="HTML",
         )
         return ETAPA_PROCEDIMENTO
@@ -481,7 +520,7 @@ async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     await update.message.reply_text(
         f"✅ <b>Especialidade registrada:</b> {formatar_maiusculo(valor)}\n\n"
         "Agora informe a <b>descrição do Procedimento/Exame</b>:\n"
-        "<i>(Ex: Consulta / Exame)</i>",
+        "<i>(Ex: Consulta ou Exame)</i>",
         parse_mode="HTML",
     )
     return ETAPA_PROCEDIMENTO
@@ -526,22 +565,60 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await context.bot.send_message(
             chat_id=chat_id,
             text="❌ Cadastro cancelado pelo usuário.",
-            reply_markup=TECLADO_MENU,
+            reply_markup=obter_teclado_menu(update.effective_user.id),
         )
         context.user_data.clear()
         context.user_data.pop("_em_fluxo_admin", None)
         return ConversationHandler.END
 
+    # 1. Cria a variável definindo o fallback (Se não tiver procedimento, vira "Não informado")
+    procedimento_final = context.user_data.get("procedimento") or "Não informado"
+
+    # 2. Monta o dicionário para salvar
     dados_salvar = {
         "chat_id": user_id,
-        "numero_sus": dados.get("sus"),
-        "nome_paciente": dados.get("nome"),
-        
-        "data_nascimento": dados.get("nascimento"),
-        "numero_reg": dados.get("numero_regulacao"),
-        "cbo": dados.get("cbo"),
-        "procedimento": dados.get("procedimento"),
+        "numero_sus": context.user_data.get("sus"),
+        "nome_paciente": context.user_data.get("nome"),
+        "data_nascimento": context.user_data.get("nascimento"),
+        "numero_reg": context.user_data.get("numero_regulacao"),
+        "cbo": context.user_data.get("cbo"),
+        "procedimento": procedimento_final,
     }
+
+    # 🛡️ Prevenção de duplicata (que já estava no seu código)
+    numero_reg_novo = dados_salvar.get("numero_reg")
+    if numero_reg_novo:
+        try:
+            checagem = (
+                supabase.table("AlertaSUS_2.0")
+                .select("id")
+                .eq("chat_id", user_id)
+                .eq("numero_reg", numero_reg_novo)
+                .execute()
+            )
+            if checagem.data:
+                # ... (seu código caso já exista)
+                return ConversationHandler.END
+        except Exception as e:
+            print(f"Erro na checagem: {e}")
+
+    # === AQUI É ONDE O BOT SALVA NO BANCO ===
+    try:
+        # 1. Salva a regulação na tabela principal
+        supabase.table("AlertaSUS_2.0").insert(dados_salvar).execute()
+
+        # 2. 🛡️ GASTA A FICHA! (Insira esta linha nova aqui)
+        supabase.table("historico_cadastros").insert(
+            {"chat_id": user_id, "mes_referencia": datetime.now().strftime("%Y-%m")}
+        ).execute()
+
+        # 3. Envia a mensagem de sucesso (provavelmente já existe algo assim no seu código)
+        await query.edit_message_text("✅ <b>Regulação cadastrada com sucesso!</b>", parse_mode="HTML")
+
+    except Exception as e:
+        print(f"Erro ao salvar cadastro: {e}")
+        # ... (mensagem de erro)
+
     # 🛡️ Prevenção de duplicata: mesmo chat_id + numero_reg
     numero_reg_novo = dados_salvar.get("numero_reg")
     if numero_reg_novo:
@@ -571,7 +648,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         "💡 Se quiser remover, use /excluir."
                     ),
                     parse_mode="HTML",
-                    reply_markup=TECLADO_MENU,
+                    reply_markup=obter_teclado_menu(update.effective_user.id),
                 )
                 context.user_data.clear()
                 context.user_data.pop("_em_fluxo_admin", None)
@@ -611,7 +688,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # 3. Envia o Menu Principal
     print("DEBUG 7: Enviando menu principal...")
-    await context.bot.send_message(chat_id=chat_id, text="O que deseja fazer agora?", reply_markup=TECLADO_MENU)
+    await context.bot.send_message(chat_id=chat_id, text="O que deseja fazer agora?", reply_markup=obter_teclado_menu(update.effective_user.id))
 
     # 4. Marketing: oferta pós-1ª regulação
     try:
@@ -789,7 +866,7 @@ async def callback_escolher_metodo(update: Update, context: ContextTypes.DEFAULT
     teclado = InlineKeyboardMarkup(botoes)
 
     await query.edit_message_text(
-        "📝 <b>Iniciando cadastro de nova regulação.</b>\n\n" "Selecione qual Cartão do SUS deseja usar:",
+        "📝 <b>Iniciando cadastro de nova regulação.</b>\n\nSelecione qual Cartão do SUS deseja usar:",
         parse_mode="HTML",
         reply_markup=teclado,
     )
@@ -959,8 +1036,11 @@ async def callback_confirmar_ocr(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data["sus"] = dados.get("numero_sus")
         context.user_data["nome"] = dados.get("nome_paciente")
         context.user_data["cbo"] = dados.get("cbo")
-        context.user_data["procedimento"] = dados.get("procedimento")
         context.user_data["numero_regulacao"] = dados.get("numero_reg")
+
+        # O procedimento NÃO é preenchido aqui. Fica vazio.
+        context.user_data["procedimento"] = None
+
         context.user_data["_origem_ocr"] = True
 
         await query.edit_message_text(

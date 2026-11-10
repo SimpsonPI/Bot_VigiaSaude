@@ -4,6 +4,7 @@ from html import escape
 import logging
 import warnings
 import planos_config as pc
+from utils import obter_teclado_menu
 
 from telegram import (
     BotCommand,
@@ -187,7 +188,7 @@ async def callback_abrir_termo_privacidade(update: Update, context: ContextTypes
 
 # --- HANDLER DO COMANDO /START E /INICIAR ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from utils import TECLADO_MENU
+    from utils import obter_teclado_menu
     from config import is_admin
     from telegram import ReplyKeyboardRemove
 
@@ -215,7 +216,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             chat_id=chat_id,
             text="⬇️ <i>Selecione um comando no menu abaixo:</i>",
-            reply_markup=TECLADO_MENU,
+            reply_markup=obter_teclado_menu(update.effective_user.id),
             parse_mode="HTML",
         )
         return
@@ -262,7 +263,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id=chat_id,
         text=mensagem,
         parse_mode="HTML",
-        reply_markup=TECLADO_MENU,
+        reply_markup=obter_teclado_menu(update.effective_user.id),
     )
 
 
@@ -375,40 +376,40 @@ async def _montar_painel_admin(user_id: int) -> tuple[str, InlineKeyboardMarkup]
 
     hora = agora.strftime("%d/%m · %H:%M")
 
+    # Texto limpo, usando emojis como separadores visuais
     texto = (
         f"👑 <b>Painel Admin</b>\n"
         f"<i>{hora} UTC</i>\n\n"
-        "▪️ <b>SISTEMA</b>\n"
+        f"<b>SISTEMA</b>\n"
         f"👥 {total_users} usuários · {users_ativos} ativos\n"
         f"📋 {total_regs} regulações\n"
         f"💰 {total_pix_pend} Pix pendente(s)\n\n"
-        "▪️ <b>HOJE (24h)</b>\n"
+        f"<b>HOJE (24h)</b>\n"
         f"👥 +{novos_24h_users} usuários\n"
         f"📋 +{novos_24h_regs} regulações\n\n"
-        "▪️ <b>MINHAS REGULAÇÕES</b>\n"
+        f"<b>SUAS REGULAÇÕES</b>\n"
         f"📊 {total_minhas} monitoradas\n"
-        f"🟢 {m_agend} · 🟡 {m_fila} · 🔵 {m_venc} · 🔴 {m_canc}"
+        f"🟢 {m_agend} · 🟡 {m_fila} · 🔵 {m_venc} · 🔴 {m_canc}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━"  # Linha sutil para alargar o balão
     )
 
+    # Grade de botões organizada (3 por linha para preencher a margem)
     botoes = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("🔍 Verificar", callback_data="admin_ver_todas"),
-                InlineKeyboardButton("📋 Minhas", callback_data="admin_minhas"),
-            ],
-            [
                 InlineKeyboardButton("📊 Stats", callback_data="painel_estatisticas"),
                 InlineKeyboardButton("👥 Ativos", callback_data="painel_ativos"),
-            ],
-            [
                 InlineKeyboardButton("📋 Enquetes", callback_data="admin_enquetes"),
-                InlineKeyboardButton("⚙️ Usuários", callback_data="admin_usuarios"),
             ],
             [
+                InlineKeyboardButton("⚙️ Usuários", callback_data="admin_usuarios"),
                 InlineKeyboardButton("📢 Comandos", callback_data="admin_comandos"),
                 InlineKeyboardButton("🔄 Atualizar", callback_data="admin_refresh"),
             ],
-            [InlineKeyboardButton("❌ Fechar", callback_data="iniciar")],
+            [
+                # Botão fechar centralizado ou ocupando 100% da última linha
+                InlineKeyboardButton("❌ Fechar Painel", callback_data="iniciar")
+            ],
         ]
     )
 
@@ -2012,45 +2013,62 @@ async def enviar_oferta_limite_atingido(
 
         # ==========================================
 
+    # MARKETING: EXPIRAÇÃO DA DEGUSTAÇÃO
+    # ==========================================
 
-# MARKETING: EXPIRAÇÃO DA DEGUSTAÇÃO
-# ==========================================
+    is_degustacao = "degustacao" in str(tipo_plano).lower()
 
-
-async def enviar_alerta_expiracao(context, chat_id: str, tipo_plano: str, dias: int, data_venc: str):
-    """Envia alerta de expiração escalonado (3d, 1d, 0d)."""
-    from datetime import datetime
-
-    try:
-        venc_dt = datetime.fromisoformat(str(data_venc))
-        venc_str = venc_dt.strftime("%d/%m/%Y")
-    except Exception:
-        venc_str = data_venc
-
-    if dias == 3:
-        titulo = "📅 <b>Faltam 3 dias!</b>"
-        texto_corpo = (
-            f"Sua degustação do VigiaSaúde termina em <b>3 dias</b> "
-            f"(<b>{venc_str}</b>).\n\n"
-            "Após esse prazo, você <b>perde o monitoramento</b> das suas regulações. "
-            "Para continuar, assine um plano Pro:"
-        )
-        urgencia = ""
-    elif dias == 1:
-        titulo = "⏰ <b>Falta apenas 1 dia!</b>"
-        texto_corpo = (
-            f"Sua degustação termina <b>amanhã</b> (<b>{venc_str}</b>).\n\n"
-            "Não perca o monitoramento das suas regulações. Assine agora:"
-        )
-        urgencia = "\n🔥 <i>Recomendamos garantir hoje para não esquecer!</i>"
-    else:  # 0 dias
-        titulo = "🚨 <b>Sua degustação expira HOJE!</b>"
-        texto_corpo = (
-            f"Última chance: sua degustação acaba <b>hoje</b> (<b>{venc_str}</b>).\n\n"
-            "Após o vencimento, você não receberá mais alertas automáticos. "
-            "Garanta seu acesso agora:"
-        )
-        urgencia = "\n🔥 <i>Não deixe para depois — leva menos de 1 minuto!</i>"
+    if is_degustacao:
+        if dias == 3:
+            titulo = "📅 <b>Faltam 3 dias!</b>"
+            texto_corpo = (
+                f"Sua <b>degustação</b> do VigiaSaúde termina em <b>3 dias</b> "
+                f"(<b>{venc_str}</b>).\n\n"
+                "Após esse prazo, você <b>perde o monitoramento</b> das suas regulações. "
+                "Para continuar, assine um plano Pro:"
+            )
+            urgencia = ""
+        elif dias == 1:
+            titulo = "⏰ <b>Falta apenas 1 dia!</b>"
+            texto_corpo = (
+                f"Sua <b>degustação</b> termina <b>amanhã</b> (<b>{venc_str}</b>).\n\n"
+                "Não perca o monitoramento das suas regulações. Assine agora:"
+            )
+            urgencia = "\n🔥 <i>Recomendamos garantir hoje para não esquecer!</i>"
+        else:  # 0 dias
+            titulo = "🚨 <b>Sua degustação expira HOJE!</b>"
+            texto_corpo = (
+                f"Última chance: sua <b>degustação</b> acaba <b>hoje</b> (<b>{venc_str}</b>).\n\n"
+                "Após o vencimento, você não receberá mais alertas automáticos. "
+                "Garanta seu acesso agora:"
+            )
+            urgencia = "\n🔥 <i>Não deixe para depois — leva menos de 1 minuto!</i>"
+    else:
+        # Usuário de plano PAGO
+        nome_plano = tipo_plano.capitalize()  # Ex: Mensal, Trimestral
+        if dias == 3:
+            titulo = "📅 <b>Faltam 3 dias!</b>"
+            texto_corpo = (
+                f"Seu <b>Plano {nome_plano}</b> do VigiaSaúde vence em <b>3 dias</b> "
+                f"(<b>{venc_str}</b>).\n\n"
+                "Para não perder o monitoramento das suas regulações, renove agora:"
+            )
+            urgencia = ""
+        elif dias == 1:
+            titulo = "⏰ <b>Falta apenas 1 dia!</b>"
+            texto_corpo = (
+                f"Seu <b>Plano {nome_plano}</b> vence <b>amanhã</b> (<b>{venc_str}</b>).\n\n"
+                "Não perca o monitoramento das suas regulações. Renove agora:"
+            )
+            urgencia = "\n🔥 <i>Recomendamos garantir hoje para não esquecer!</i>"
+        else:
+            titulo = "🚨 <b>Seu plano expira HOJE!</b>"
+            texto_corpo = (
+                f"Última chance: seu <b>Plano {nome_plano}</b> acaba <b>hoje</b> (<b>{venc_str}</b>).\n\n"
+                "Após o vencimento, você não receberá mais alertas automáticos. "
+                "Garanta seu acesso agora:"
+            )
+            urgencia = "\n🔥 <i>Não deixe para depois — leva menos de 1 minuto!</i>"
 
     texto = f"{titulo}\n\n{texto_corpo}\n\n{pc.texto_lista_planos()}\n{urgencia}\n\n👇 Escolha seu plano:"
 

@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from database import supabase
-from utils import TECLADO_MENU
+from utils import obter_teclado_menu
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ async def comando_meus_cadastros(update: Update, context: ContextTypes.DEFAULT_T
         if not registros:
             await update.message.reply_text(
                 "Você não possui nenhuma regulação cadastrada no momento.\nUse /cadastrar_nova para adicionar.",
-                reply_markup=TECLADO_MENU,
+                reply_markup=obter_teclado_menu(update.effective_user.id),
             )
             return
 
@@ -44,8 +44,12 @@ async def comando_meus_cadastros(update: Update, context: ContextTypes.DEFAULT_T
 
         msg += "<i>Para atualizar o status, use o botão '🔄 Verificar Todas'.</i>"
 
-        await update.message.reply_text(msg, parse_mode="HTML", reply_markup=TECLADO_MENU)
+        await update.message.reply_text(
+            msg, parse_mode="HTML", reply_markup=obter_teclado_menu(update.effective_user.id)
+        )
 
     except Exception as e:
         logger.error(f"Erro ao listar cadastros: {e}")
-        await update.message.reply_text("❌ Erro ao buscar seus cadastros.", reply_markup=TECLADO_MENU)
+        await update.message.reply_text(
+            "❌ Erro ao buscar seus cadastros.", reply_markup=obter_teclado_menu(update.effective_user.id)
+        )

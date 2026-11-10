@@ -2,7 +2,8 @@ import logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 from database import supabase
-from utils import TECLADO_MENU
+from utils import obter_teclado_menu
+from utils import obter_teclado_menu
 from utils import (
     SELECIONAR_REGULACAO,
     SELECIONAR_CAMPO,
@@ -109,7 +110,7 @@ async def mostrar_resumo_regulacao(update_or_query, context, num_reg):
     except Exception as e:
         logger.error(f"Erro ao buscar resumo da regulação: {e}")
         if hasattr(update_or_query, "message") and update_or_query.message:
-            await update_or_query.message.reply_text("✅ Campo atualizado com sucesso!", reply_markup=TECLADO_MENU)
+            await update_or_query.message.reply_text("✅ Campo atualizado com sucesso!", reply_markup=obter_teclado_menu(update.effective_user.id))
 
 
 async def selecionar_regulacao_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -181,7 +182,7 @@ async def selecionar_campo_callback(update: Update, context: ContextTypes.DEFAUL
                 "✅ O ID no seu <b>comprovante de agendamento</b>\n"
                 "✅ Se os <b>8 dígitos</b> conferem <b>exatamente</b>\n"
                 "✅ Se o número é da <b>sua</b> regulação\n\n"
-                "❌ <b>Se você digitar o ID errado, o bot pode mostrar "
+                "❌ <b>Se você digitar o ID errado, o bot pode mostrar </b>"
                 "dados de outro paciente do SUS.</b>\n\n"
                 "📌 <i>Exemplo real:</i>\n"
                 "Cadastrar <code>12345678</code> em vez de <code>87654321</code> "
@@ -210,13 +211,14 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if not novo_valor:
         await update.message.reply_text(
             "⚠️ Você não digitou nada. Tente novamente:",
-            reply_markup=TECLADO_MENU,
+            reply_markup=obter_teclado_menu(update.effective_user.id),
         )
         return ConversationHandler.END
 
     # 2. Validações específicas por campo
     if campo in ("numero_reg", "numero_regulacao", "id_regulacao"):
         import re
+
         novo_valor_limpo = re.sub(r"\D", "", novo_valor)
 
         if len(novo_valor_limpo) != 8:
@@ -226,7 +228,7 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 "📌 <i>Confira no seu comprovante de agendamento ou na unidade básica de saúde.</i>\n\n"
                 "Tente novamente ou use /corrigir para recomeçar.",
                 parse_mode="HTML",
-                reply_markup=TECLADO_MENU,
+                reply_markup=obter_teclado_menu(update.effective_user.id),
             )
             context.user_data.clear()
             return ConversationHandler.END
@@ -249,7 +251,7 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     "duplicada com /excluir e cadastre novamente.\n\n"
                     "A correção foi cancelada.",
                     parse_mode="HTML",
-                    reply_markup=TECLADO_MENU,
+                    reply_markup=obter_teclado_menu(update.effective_user.id),
                 )
                 context.user_data.clear()
                 return ConversationHandler.END
@@ -258,16 +260,17 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     elif campo in ("data_nascimento", "nascimento"):
         from utils import formatar_data
+
         novo_valor_formatado = formatar_data(novo_valor)
-        
+
         if len(str(novo_valor_formatado)) != 10:
             await update.message.reply_text(
                 "⚠️ <b>Data inválida.</b>\nUse o formato DD/MM/AAAA (ex: 01/01/1990).",
                 parse_mode="HTML",
-                reply_markup=TECLADO_MENU,
+                reply_markup=obter_teclado_menu(update.effective_user.id),
             )
             return AGUARDAR_NOVO_VALOR
-            
+
         novo_valor = novo_valor_formatado
 
     # 3. Executa o UPDATE
@@ -300,14 +303,14 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
         await update.message.reply_text(
             "✅ Dados atualizados com sucesso!",
-            reply_markup=TECLADO_MENU,
+            reply_markup=obter_teclado_menu(update.effective_user.id),
         )
 
     except Exception as e:
         logger.error(f"Erro ao salvar alteração no Supabase: {e}")
         await update.message.reply_text(
             "❌ Erro ao atualizar o dado no banco de dados.",
-            reply_markup=TECLADO_MENU,
+            reply_markup=obter_teclado_menu(update.effective_user.id),
         )
 
     context.user_data.clear()

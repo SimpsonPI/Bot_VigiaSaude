@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from database import salvar_regulacao, registrar_consentimento_lgpd
 from utils import (
     DISCLAIMER_TEXTO,
-    TECLADO_MENU,
+    obter_teclado_menu,
     ETAPA_SUS,
     ETAPA_NOME,
     ETAPA_CELULAR,
@@ -504,7 +504,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await context.bot.send_message(
             chat_id=chat_id,
             text="❌ Cadastro cancelado pelo usuário.",
-            reply_markup=TECLADO_MENU,
+            reply_markup=obter_teclado_menu(update.effective_user.id),
         )
         context.user_data.clear()
         context.user_data.pop("_em_fluxo_admin", None)
@@ -549,7 +549,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         "💡 Se quiser remover, use /excluir."
                     ),
                     parse_mode="HTML",
-                    reply_markup=TECLADO_MENU,
+                    reply_markup=obter_teclado_menu(update.effective_user.id),
                 )
                 context.user_data.clear()
                 context.user_data.pop("_em_fluxo_admin", None)
@@ -589,7 +589,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # 3. Envia o Menu Principal
     print("DEBUG 7: Enviando menu principal...")
-    await context.bot.send_message(chat_id=chat_id, text="O que deseja fazer agora?", reply_markup=TECLADO_MENU)
+    await context.bot.send_message(chat_id=chat_id, text="O que deseja fazer agora?", reply_markup=obter_teclado_menu(update.effective_user.id))
 
     # 4. Marketing: oferta pós-1ª regulação
     try:

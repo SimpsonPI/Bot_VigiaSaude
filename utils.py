@@ -35,17 +35,33 @@ BROADCAST_CONFIRMAR_ENVIO = 52
 
 from telegram import ReplyKeyboardMarkup
 
-TECLADO_MENU = ReplyKeyboardMarkup(
-    [
+
+def obter_teclado_menu(user_id: int) -> ReplyKeyboardMarkup:
+    from config import is_admin  # Importa a função que verifica se é admin
+
+    botoes = [
         ["/iniciar", "/planos"],
         ["/cadastrar_nova", "/meus_cadastros"],
-        ["/verificar_todos", "/verificar_especifico"],
-        ["/corrigir", "/excluir"],
-        ["/recursos", "/suporte"],
-        ["/privacidade"],
-    ],
-    resize_keyboard=True,
-)
+    ]
+
+    # A MÁGICA ACONTECE AQUI:
+    if is_admin(user_id):
+        # Se for admin, mostra os dois botões
+        botoes.append(["/verificar_todos", "/verificar_especifico"])
+    else:
+        # Se for usuário comum, mostra apenas o específico
+        botoes.append(["/verificar_especifico"])
+
+    botoes.extend(
+        [
+            ["/corrigir", "/excluir"],
+            ["/recursos", "/suporte"],
+            ["/privacidade"],
+        ]
+    )
+
+    return ReplyKeyboardMarkup(botoes, resize_keyboard=True)
+
 
 TECLADO_CANCELAR = ReplyKeyboardMarkup([["🚫 Cancelar Operação"]], resize_keyboard=True)
 
@@ -215,6 +231,6 @@ async def verificar_se_e_menu_e_executar(update, context) -> bool:
         msg_resp = (
             "❌ Operação cancelada com sucesso." if "cancelar" in texto.lower() else "Saindo da operação atual..."
         )
-        await update.message.reply_text(msg_resp, reply_markup=TECLADO_MENU)
+        await update.message.reply_text(msg_resp, reply_markup=obter_teclado_menu(update.effective_user.id))
         return True
     return False

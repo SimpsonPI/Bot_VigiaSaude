@@ -24,15 +24,13 @@ def _teclado_principal() -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton("📊 Relatórios", callback_data="painel_relatorios"),
-                InlineKeyboardButton("👑 Planos", callback_data="painel_planos"),
-            ],
-            [
                 InlineKeyboardButton("🛡️ Segurança", callback_data="painel_seguranca"),
                 InlineKeyboardButton("📢 Comunicação", callback_data="painel_comunicacao"),
             ],
             [
                 InlineKeyboardButton("📋 Enquetes", callback_data="painel_enquetes"),
                 InlineKeyboardButton("🔧 Sistema", callback_data="painel_sistema"),
+                InlineKeyboardButton("👑 Planos", callback_data="painel_planos"),
             ],
             [InlineKeyboardButton("❌ Fechar Painel", callback_data="painel_fechar")],
         ]
@@ -123,16 +121,13 @@ def _texto_sistema() -> str:
 
 async def comando_painel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Abre o painel de controle interativo."""
+    print("### comando_painel EXECUTADO ###")
     if not _eh_admin(update.effective_user.id):
         if update.message:
             await update.message.reply_text("⛔ Acesso restrito a administradores.")
         return
 
-    texto = (
-        "🎛️ <b>PAINEL DE CONTROLE ADMINISTRATIVO</b>\n"
-        "VigiaSaúde — Central de Operações\n\n"
-        "Selecione uma categoria:"
-    )
+    texto = "🎛️ <b>PAINEL DE CONTROLE ADMINISTRATIVO</b>\nVigiaSaúde — Central de Operações\n\nSelecione uma categoria:"
     teclado = _teclado_principal()
 
     if update.message:
@@ -169,9 +164,7 @@ async def callback_painel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "painel_inicio":
         texto = (
-            "🎛️ <b>PAINEL DE CONTROLE ADMINISTRATIVO</b>\n"
-            "VigiaSaúde — Central de Operações\n\n"
-            "Selecione uma categoria:"
+            "🎛️ <b>PAINEL DE CONTROLE ADMINISTRATIVO</b>\nVigiaSaúde — Central de Operações\n\nSelecione uma categoria:"
         )
         await query.edit_message_text(texto, parse_mode="HTML", reply_markup=_teclado_principal())
         return

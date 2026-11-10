@@ -1,3 +1,4 @@
+# reiniciando o bot para limpar cache
 from dotenv import load_dotenv
 from bot_seguranca import global_error_handler
 from handler_broadcast import conv_broadcast
