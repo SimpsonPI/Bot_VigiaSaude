@@ -1,145 +1,73 @@
 import os
-import io
-import base64
 import logging
-import sys
-import subprocess
-
-# --- 🛠️ PLANO DE EMERGÊNCIA: INSTALA O MERCADO PAGO NA MARRA ---
-try:
-    import mercadopago
-except ModuleNotFoundError:
-    logging.warning("Instalando mercadopago dinamicamente...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "mercadopago"])
-    import mercadopago
-# ---------------------------------------------------------------
-
-from telegram import Update
+import requests
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-
 from database import supabase
 
 logger = logging.getLogger(__name__)
 
-sdk = mercadopago.SDK(os.getenv("MERCADOPAGO_ACCESS_TOKEN", ""))
+# Chave de acesso do Mercado Pago
+MP_TOKEN = os.getenv("MERCADOPAGO_ACCESS_TOKEN", "")
 
-# Planos agora vêm de planos_config.py (fonte única de verdade)
-import planos_config as pc
-
-
-async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE, plano_chave: str, preco: float):
+    """Gera o Pix direto pela API do Mercado Pago, sem SDK."""
     query = update.callback_query
-
     if query:
         await query.answer()
-        user_id = query.from_user.id
-        first_name = query.from_user.first_name or "Usuario"
-        last_name = query.from_user.last_name or "VigiaSaude"
-        # Callback chega como "pix_mensal", "pix_pro_trimestral", "pix_pro_semestral"
-        plano_chave = query.data.replace("pix_", "")
-        if not pc.get(plano_chave):
-            plano_chave = "pro_trimestral"
-        chat_id = query.message.chat_id
-    else:
-        user_id = update.effective_user.id
-        first_name = update.effective_user.first_name or "Usuario"
-        last_name = update.effective_user.last_name or "VigiaSaude"
-        plano_chave = context.args[0].lower() if context.args else "pro_trimestral"
-        if not pc.get(plano_chave):
-            plano_chave = "pro_trimestral"
-        chat_id = update.effective_chat.id
-
-    plano = pc.get(plano_chave)
-    nome_plano = plano["nome"]
-    valor = plano["preco"]
-
-    payment_data = {
-        "transaction_amount": float(valor),
-        "description": f"VigiaSaude - {nome_plano}",
+        
+    user_id = update.effective_user.id
+    nome = update.effective_user.first_name or "Cliente"
+    
+    url = "https://api.mercadopago.com/v1/payments"
+    headers = {
+        "Authorization": f"Bearer {MP_TOKEN}",
+        "Content-Type": "application/json",
+        "X-Idempotency-Key": f"pix_{user_id}_{plano_chave}"
+    }
+    
+    payload = {
+        "transaction_amount": float(preco),
+        "description": f"VigiaSaude - Plano {plano_chave}",
         "payment_method_id": "pix",
         "payer": {
-            "email": f"cliente_{user_id}@gmail.com",
-            "first_name": first_name,
-            "last_name": last_name,
-        },
-        "external_reference": str(user_id),
+            "email": f"user_{user_id}@vigiasaude.com.br",
+            "first_name": nome,
+            "identification": {"type": "CPF", "number": "00000000000"} # CPF fictício para testes
+        }
     }
-
+    
     try:
-        result = sdk.payment().create(payment_data)
-
-        if result.get("status") not in [200, 201]:
-            erro_mp = result.get("response", {})
-            logger.error(f"❌ Erro do Mercado Pago: {erro_mp.get('message')} - {erro_mp.get('cause')}")
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="❌ Erro ao gerar o pagamento no Mercado Pago. Tente novamente em instantes.",
-            )
-            return
-
-        payment = result.get("response", {})
-        point_of_interaction = payment.get("point_of_interaction", {})
-        transaction_data = point_of_interaction.get("transaction_data", {})
-
-        pix_copia_cola = transaction_data.get("qr_code")
-        qr_code_base64 = transaction_data.get("qr_code_base64")
-        mp_payment_id = payment.get("id")
-
-        if not pix_copia_cola or not mp_payment_id:
-            logger.error("❌ Resposta do Mercado Pago sem qr_code ou ID válido.")
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="⚠️ Não foi possível recuperar os dados do Pix. Por favor, tente novamente em instantes.",
-            )
-            return
-
-        try:
-            supabase.table("pagamentos_pix").insert(
-                {
-                    "chat_id": str(user_id),
-                    "pix_id": str(mp_payment_id),
-                    "valor": float(valor),
-                    "tipo_plano": plano_chave,
-                    "status": "pending",
-                }
-            ).execute()
-        except Exception as e_db:
-            logger.warning(f"⚠️ Aviso ao registrar pagamento na tabela pagamentos_pix: {e_db}")
-
-        legenda_mensagem = (
-            f"💳 <b>{nome_plano.upper()} — VigiaSaude</b>\n\n"
-            f"• <b>Valor:</b> R$ {valor:.2f}\n"
-            f"• <b>Liberação:</b> Instantânea após a confirmação\n\n"
-            f"Aponte a câmera do seu aplicativo bancário para o QR Code acima ou utilize o código Copia e Cola abaixo:"
-        )
-
-        if qr_code_base64:
-            img_bytes = base64.b64decode(qr_code_base64)
-            img_io = io.BytesIO(img_bytes)
-            img_io.name = "qrcode_pix.png"
-
+        response = requests.post(url, json=payload, headers=headers)
+        dados = response.json()
+        
+        if response.status_code in [200, 201]:
+            qr_code = dados["point_of_interaction"]["transaction_data"]["qr_code"]
+            qr_code_base64 = dados["point_of_interaction"]["transaction_data"]["qr_code_base64"]
+            payment_id = dados["id"]
+            
+            # Salva no Supabase (ajuste o nome da tabela se necessário)
+            supabase.table("pagamentos_pix").upsert({
+                "chat_id": str(user_id),
+                "payment_id": str(payment_id),
+                "status": "pending",
+                "plano": plano_chave,
+                "valor": preco
+            }).execute()
+            
+            import base64
+            foto = base64.b64decode(qr_code_base64)
+            
             await context.bot.send_photo(
-                chat_id=chat_id,
-                photo=img_io,
-                caption=legenda_mensagem,
-                parse_mode="HTML",
+                chat_id=user_id,
+                photo=foto,
+                caption=f"💳 <b>Pagamento via Pix</b>\n\nPlano: {plano_chave}\nValor: R$ {preco:.2f}\n\n<i>Escaneie o QR Code ou use o código copia e cola.</i>\n\n<code>{qr_code}</code>",
+                parse_mode="HTML"
             )
         else:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=legenda_mensagem,
-                parse_mode="HTML",
-            )
-
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"`{pix_copia_cola}`",
-            parse_mode="Markdown",
-        )
-
+            logger.error(f"Erro MP: {dados}")
+            await context.bot.send_message(chat_id=user_id, text="❌ Erro ao gerar o Pix. Tente novamente mais tarde.")
+            
     except Exception as e:
-        logger.error(f"❌ Exceção ao gerar Pix: {e}")
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="❌ Ocorreu um erro inesperado ao gerar a cobrança Pix. Tente novamente em instantes.",
-        )
+        logger.error(f"Erro no pagamento: {e}")
+        await context.bot.send_message(chat_id=user_id, text="❌ Erro de conexão com o Mercado Pago.")
