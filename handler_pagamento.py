@@ -2,7 +2,18 @@ import os
 import io
 import base64
 import logging
-import mercadopago
+import sys
+import subprocess
+
+# --- 🛠️ PLANO DE EMERGÊNCIA: INSTALA O MERCADO PAGO NA MARRA ---
+try:
+    import mercadopago
+except ModuleNotFoundError:
+    logging.warning("Instalando mercadopago dinamicamente...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "mercadopago"])
+    import mercadopago
+# ---------------------------------------------------------------
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
