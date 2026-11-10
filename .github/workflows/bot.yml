@@ -3,9 +3,14 @@ name: VigiaSaude Premium
 on:
   workflow_dispatch:
 
+concurrency:
+  group: vigiasaude-bot
+  cancel-in-progress: true
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 350
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -14,8 +19,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'pip'
 
-      - name: Instalar e Rodar Bot em Venv
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -c "import mercadopago; print('✅ MercadoPago instalado!')"
+
+      - name: Executar bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -30,19 +42,4 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           PORT: ${{ secrets.PORT }}
-        run: |
-          # 1. Cria um ambiente virtual limpo no GitHub
-          python -m venv venv
-          
-          # 2. Ativa o ambiente virtual
-          source venv/bin/activate
-          
-          # 3. Instala tudo o que o bot precisa dentro desse ambiente
-          pip install --upgrade pip
-          pip install mercadopago python-telegram-bot supabase httpx beautifulsoup4 google-generativeai groq python-dotenv
-          
-          # 4. Testa se instalou mesmo
-          python -c "import mercadopago; print('✅ MercadoPago instalado!')"
-          
-          # 5. Roda o bot
-          python main.py
+        run: python main.py
