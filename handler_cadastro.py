@@ -449,6 +449,7 @@ async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    print(f"DEBUG: Recebido ID {update.message.text}")
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
     num_reg = re.sub(r"\D", "", update.message.text)
@@ -471,14 +472,13 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     # --- BYPASS ADMIN ---
     from config import is_admin
+    from mitigacao_cadastro import pode_cadastrar, registrar_cadastro
 
     is_adm = is_admin(update.effective_user.id)
+    chat_id = str(update.effective_user.id)  # <-- MOVI ESTA LINHA PARA CÁ (FORA DO IF)
 
     if not is_adm:
         # ✅ Rate limit de cadastros (5/dia) - SÓ PARA USUÁRIO COMUM
-        from mitigacao_cadastro import pode_cadastrar, registrar_cadastro
-
-        chat_id = str(update.effective_user.id)
         pode, _motivo, _restantes = pode_cadastrar(chat_id)
         if not pode:
             await update.message.reply_text("⏳ <b>Limite diário de cadastros atingido!</b>", parse_mode="HTML")
@@ -488,6 +488,7 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # ✅ Verifica duplicata global (mesmo usuário ou outro)
     try:
         chat_id_int = int(chat_id) if chat_id.isdigit() else chat_id
+        print("DEBUG: Checando duplicata no banco...")
         res_dup = supabase.table("AlertaSUS_2.0").select("id, chat_id").eq("numero_reg", num_reg).execute()
 
         if res_dup.data:
@@ -531,9 +532,10 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     except Exception as e:
         logger.error(f"Erro ao verificar duplicata no cadastro: {e}")
 
+    # Se chegou até aqui, o cadastro está liberado. Registra a ficha.
     registrar_cadastro(chat_id)
 
-    # ✅ Salva o número da regulação
+    # ✅ Salva o número da regulação na memória
     context.user_data["numero_regulacao"] = num_reg
 
     # ---------------------------------------------------------
@@ -543,6 +545,7 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         "Qual o nome completo do paciente?",
         parse_mode="HTML",
     )
+    print("DEBUG: Passou da checagem! Indo para a próxima etapa.")
     return ETAPA_NOME  # <-- Retorna para a etapa do Nome
 
 
