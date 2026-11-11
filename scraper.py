@@ -211,36 +211,52 @@ def _status_corrigido(situacao: str | None, data_consulta: str | None) -> str | 
     return situacao
 
 
-async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict:
-    atraso = random.uniform(1.0, 2.0)
-    await asyncio.sleep(atraso)
+async def consultar_status_fms(numero_reg: str, sus: str = "") -> dict:
+    """Consulta o portal da FMS e retorna os dados ou a mensagem de erro."""
+    import urllib.parse
+    from bs4 import BeautifulSoup
 
-    url_fms_target = f"{URL_BUSCA_FMS}?number_id={numero_reg}"
+    url_fms_target = f"https://sistema.fms.pmt.pi.gov.br/regulacao/consultar?regulacao={numero_reg}&sus={sus}"
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
+    # --- 1ª TENTATIVA: ACESSO DIRETO ---
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=25.0, headers=headers) as client:
             resposta = await client.get(url_fms_target)
-            if resposta.status_code == 200 and "nenhum registro" not in resposta.text.lower():
+
+            if resposta.status_code == 200:
                 soup = BeautifulSoup(resposta.text, "html.parser")
+                texto_pagina = soup.get_text().lower()
+
+                # 🛑 VERIFICA O AVISO DE ID INVÁLIDO (O texto exato que você viu no portal)
+                if "verifique se o id ou da solicitação de regulação" in texto_pagina:
+                    return {
+                        "sucesso": False,
+                        "erro": "O ID ou o número da solicitação de regulação não foi encontrado no portal. Verifique se o número no seu comprovante está correto.",
+                    }
+
+                if "nenhum registro" in texto_pagina or "não encontrado" in texto_pagina:
+                    return {"sucesso": False, "erro": f"A regulação {numero_reg} não foi encontrada no portal da FMS."}
+
+                # Se chegou até aqui, extrai os dados normalmente
                 return _extrair_dados_html(soup)
+
     except Exception as e:
         logger.info(f"Acesso direto à FMS falhou ou bloqueou ({e}). Acionando ScraperAPI...")
+
+    # --- 2ª TENTATIVA: VIA SCRAPERAPI ---
+    from config import SCRAPER_KEY  # Ajuste o import se necessário
 
     if not SCRAPER_KEY:
         return {
             "sucesso": False,
-            "mensagem": "Erro de configuração na chave do ScraperAPI.",
+            "erro": "Erro de configuração na chave do ScraperAPI.",
         }
 
-    scraper_url = f"http://api.scraperapi.com?api_key={SCRAPER_KEY}&url={url_fms_target}"
+    scraper_url = f"http://api.scraperapi.com?api_key={SCRAPER_KEY}&url={urllib.parse.quote(url_fms_target)}"
+    max_tentativas = 3
 
     for tentativa in range(1, max_tentativas + 1):
         try:
@@ -253,29 +269,37 @@ async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict
                         continue
                     return {
                         "sucesso": False,
-                        "mensagem": f"Erro HTTP {resposta.status_code}",
+                        "erro": f"Erro HTTP {resposta.status_code} ao consultar o portal.",
                     }
 
                 soup = BeautifulSoup(resposta.text, "html.parser")
                 texto_pagina = soup.get_text().lower()
 
+                # 🛑 VERIFICA O AVISO DE ID INVÁLIDO NO SCRAPERAPI TAMBÉM
+                if "verifique se o id ou da solicitação de regulação" in texto_pagina:
+                    return {
+                        "sucesso": False,
+                        "erro": "O ID ou o número da solicitação de regulação não foi encontrado no portal. Verifique se o número no seu comprovante está correto.",
+                    }
+
                 if "nenhum registro" in texto_pagina or "não encontrado" in texto_pagina:
                     return {
                         "sucesso": False,
-                        "mensagem": f"⚠️ A regulação *{numero_reg}* não foi encontrada no portal da FMS.",
+                        "erro": f"A regulação {numero_reg} não foi encontrada no portal da FMS.",
                     }
 
                 return _extrair_dados_html(soup)
 
-        except (httpx.TimeoutException, httpx.RequestError) as e:
-            logger.warning(f"Tentativa ScraperAPI {tentativa}/{max_tentativas} falhou (Reg {numero_reg}): {e}")
-            if tentativa < max_tentativas:
-                await asyncio.sleep(2)
+        except Exception as e:
+            logger.error(f"Erro na tentativa {tentativa} via ScraperAPI: {e}")
+            if tentativa == max_tentativas:
+                return {
+                    "sucesso": False,
+                    "erro": "Não foi possível conectar ao portal da FMS após várias tentativas. Tente novamente mais tarde.",
+                }
+            await asyncio.sleep(2)
 
-    return {
-        "sucesso": False,
-        "mensagem": "Tempo limite de conexão excedido ao acessar a FMS.",
-    }
+    return {"sucesso": False, "erro": "Erro desconhecido ao consultar a regulação."}
 
 
 async def consultar_status_sus(numero_reg: str) -> str | None:

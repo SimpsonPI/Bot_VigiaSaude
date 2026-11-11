@@ -603,7 +603,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data.pop("_em_fluxo_admin", None)
         return ConversationHandler.END
 
-    # 1. Cria a variável definindo o fallback (Se não tiver procedimento, vira "Não informado")
+    # 1. Cria a variável definindo o fallback
     procedimento_final = context.user_data.get("procedimento") or "Não informado"
 
     # 2. Monta o dicionário para salvar
@@ -617,41 +617,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "procedimento": procedimento_final,
     }
 
-    # 🛡️ Prevenção de duplicata (que já estava no seu código)
-    numero_reg_novo = dados_salvar.get("numero_reg")
-    if numero_reg_novo:
-        try:
-            checagem = (
-                supabase.table("AlertaSUS_2.0")
-                .select("id")
-                .eq("chat_id", user_id)
-                .eq("numero_reg", numero_reg_novo)
-                .execute()
-            )
-            if checagem.data:
-                # ... (seu código caso já exista)
-                return ConversationHandler.END
-        except Exception as e:
-            print(f"Erro na checagem: {e}")
-
-    # === AQUI É ONDE O BOT SALVA NO BANCO ===
-    try:
-        # 1. Salva a regulação na tabela principal
-        supabase.table("AlertaSUS_2.0").insert(dados_salvar).execute()
-
-        # 2. 🛡️ GASTA A FICHA! (Insira esta linha nova aqui)
-        supabase.table("historico_cadastros").insert(
-            {"chat_id": user_id, "mes_referencia": datetime.now().strftime("%Y-%m")}
-        ).execute()
-
-        # 3. Envia a mensagem de sucesso (provavelmente já existe algo assim no seu código)
-        await query.edit_message_text("✅ <b>Regulação cadastrada com sucesso!</b>", parse_mode="HTML")
-
-    except Exception as e:
-        print(f"Erro ao salvar cadastro: {e}")
-        # ... (mensagem de erro)
-
-    # 🛡️ Prevenção de duplicata: mesmo chat_id + numero_reg
+    # 🛡️ Prevenção de duplicata (A ÚNICA CHECAGEM VÁLIDA É ESSA, ANTES DE SALVAR)
     numero_reg_novo = dados_salvar.get("numero_reg")
     if numero_reg_novo:
         try:
@@ -666,10 +632,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 try:
                     await query.message.delete()
                 except Exception:
-                    try:
-                        await query.edit_message_reply_markup(reply_markup=None)
-                    except Exception:
-                        pass
+                    pass
 
                 await context.bot.send_message(
                     chat_id=chat_id,
@@ -688,10 +651,25 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except Exception as e:
             print(f"DEBUG duplicata: erro na checagem ({e}) — seguindo com insert")
 
-    print("DEBUG 1: Salvando no Supabase...")
-    sucesso = await salvar_regulacao(dados_salvar)
-    print(f"DEBUG 2: salvar_regulacao = {sucesso}")
+    # === SALVA NO BANCO (AQUI ELE SÓ SALVA, NÃO VERIFICA MAIS NADA) ===
+    try:
+        print("DEBUG 1: Salvando no Supabase...")
+        sucesso = await salvar_regulacao(dados_salvar)
+        print(f"DEBUG 2: salvar_regulacao = {sucesso}")
 
+        # 🛡️ GASTA A FICHA!
+        supabase.table("historico_cadastros").insert(
+            {"chat_id": user_id, "mes_referencia": datetime.now().strftime("%Y-%m")}
+        ).execute()
+
+    except Exception as e:
+        print(f"Erro ao salvar cadastro: {e}")
+        await context.bot.send_message(
+            chat_id=chat_id, text="❌ Ocorreu um erro ao salvar sua regulação. Tente novamente."
+        )
+        return ConversationHandler.END
+
+    # === FLUXO DE SUCESSO ===
     try:
         registrar_consentimento_lgpd(user_id)
         print("DEBUG 3: LGPD registrado com sucesso.")
