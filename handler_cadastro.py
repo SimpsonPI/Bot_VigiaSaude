@@ -394,6 +394,7 @@ async def receber_celular(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    print("DEBUG: ENTROU NA FUNÇÃO RECEBER_NASCIMENTO")
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
     nascimento = formatar_data(update.message.text.strip())
