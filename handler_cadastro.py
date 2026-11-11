@@ -280,7 +280,6 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     chat_id = update.effective_chat.id
     texto_bruto = update.message.text.strip()
 
-    # Normaliza: mantém só dígitos (remove espaços, pontos, traços)
     numero_sus = _re.sub(r"\D", "", texto_bruto)
 
     if not numero_sus:
@@ -334,13 +333,13 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     except Exception as e:
         print(f"ERRO no bloco do SUS: {e}")
 
-        # --- PEDE O ID E ENVIA A IMAGEM ILUSTRATIVA ---
-    import os  # Garante que o 'os' está importado
-
+    # --- AQUI É ONDE A IMAGEM DEVE SER ENVIADA ---
     texto_id = (
         "Agora digite o <b>ID da Regulação</b> (8 dígitos):\n\n"
         "📌 <i>Confira no seu comprovante de agendamento, conforme o exemplo abaixo:</i>"
     )
+
+    import os
 
     caminho_imagem = os.path.join(os.path.dirname(__file__), "comprovante_sus.jpg")
 
@@ -349,7 +348,6 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             await update.message.reply_photo(photo=foto, caption=texto_id, parse_mode="HTML")
     except Exception as e:
         logger.error(f"Erro ao enviar imagem no SUS: {e}")
-        # Se a imagem falhar, envia apenas o texto
         await update.message.reply_text(texto_id, parse_mode="HTML")
 
     return ETAPA_REGULACAO
@@ -411,42 +409,32 @@ async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE)
     print("DEBUG: ENTROU NA FUNÇÃO RECEBER_NASCIMENTO")
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
-    nascimento = formatar_data(update.message.text.strip())
 
-    if not nascimento:
+    try:
+        from datetime import datetime
+
+        texto_data = update.message.text.strip()
+        data_obj = datetime.strptime(texto_data, "%d/%m/%Y")
+        context.user_data["nascimento"] = data_obj.strftime("%Y-%m-%d")
+
         await update.message.reply_text(
-            "Data invalida. Digite no formato DD/MM/AAAA:",
+            "Agora informe a <b>Especialidade</b> da consulta/exame.\n"
+            "<i>(ex: CARDIOLOGISTA, ORTOPEDISTA)</i>\n\n"
+            "Se não souber, digite <code>0</code> para pular.",
             parse_mode="HTML",
         )
+        return ETAPA_CBO
+
+    except ValueError:
+        await update.message.reply_text("⚠️ Data inválida. Digite novamente no formato DD/MM/AAAA:")
         return ETAPA_NASCIMENTO
-
-    context.user_data["nascimento"] = nascimento
-
-    # Se veio do OCR, ja tem tudo -> pula pro LGPD
-    if context.user_data.get("_origem_ocr"):
-        return await _enviar_termo_lgpd(update, context)
-
-        # Fluxo normal
-        texto_id = (
-            "✅ <b>Dados registrados.</b>\n\n"
-            "⚠️ <b>PRÓXIMO PASSO: ID da Regulação</b>\n\n"
-            "Antes de digitar, tenha em mãos o seu <b>comprovante de agendamento</b> e confira:\n"
-            "✅ O ID correto no papel\n"
-            "✅ Se os <b>8 dígitos</b> conferem\n\n"
-            "🆔 <b>Digite o ID da Regulação:</b>"
-        )
-
-    caminho_imagem = os.path.join(os.path.dirname(__file__), "comprovante_sus.jpg")
-    try:
-        with open(caminho_imagem, "rb") as foto:
-            await update.message.reply_photo(photo=foto, caption=texto_id, parse_mode="HTML")
     except Exception as e:
-        logger.error(f"Erro ao enviar imagem: {e}")
-        await update.message.reply_text(
-            texto_id + "\n\n(Imagem ilustrativa indisponível no momento)", parse_mode="HTML"
-        )
+        import traceback
 
-    return ETAPA_REGULACAO
+        traceback.print_exc()
+        logger.error(f"Erro ao salvar data: {e}")
+        await update.message.reply_text("❌ Ocorreu um erro ao processar a data. Tente novamente.")
+        return ConversationHandler.END
 
 
 async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
