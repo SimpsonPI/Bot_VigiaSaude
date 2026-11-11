@@ -62,9 +62,37 @@ async def receber_celular(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
-    context.user_data["nascimento"] = formatar_data(update.message.text)
-    await update.message.reply_text("Agora, por favor, digite o <b>Número da Regulação</b>:", parse_mode="HTML")
-    return ETAPA_REGULACAO
+
+    try:
+        from datetime import datetime
+
+        # Pega o que o usuário digitou (ex: 27/03/1978)
+        texto_data = update.message.text.strip()
+
+        # Converte para o formato que o banco entende (1978-03-27)
+        data_obj = datetime.strptime(texto_data, "%d/%m/%Y")
+        context.user_data["nascimento"] = data_obj.strftime("%Y-%m-%d")
+
+        # Segue o fluxo para a próxima etapa (Provavelmente Especialidade ou ID)
+        await update.message.reply_text(
+            "Agora informe a <b>Especialidade</b> da consulta/exame.\n"
+            "<i>(ex: CARDIOLOGISTA, ORTOPEDISTA)</i>\n\n"
+            "Se não souber, digite <code>0</code> para pular.",
+            parse_mode="HTML",
+        )
+        return ETAPA_CBO
+
+    except ValueError:
+        # Se a data for inválida (ex: 31/02/2000), avisa o usuário
+        await update.message.reply_text("⚠️ Data inválida. Digite novamente no formato DD/MM/AAAA:")
+        return ETAPA_NASCIMENTO
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        logger.error(f"Erro ao salvar data: {e}")
+        await update.message.reply_text("❌ Ocorreu um erro ao processar a data. Tente novamente.")
+        return ConversationHandler.END
 
 
 async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -305,8 +333,12 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     except Exception as e:
         print(f"ERRO no bloco do SUS: {e}")
 
-    await update.message.reply_text("Qual o nome completo do paciente?")
-    return ETAPA_NOME
+    # --- AQUI ESTÁ A MUDANÇA: Pede o ID da Regulação em vez do Nome ---
+    await update.message.reply_text(
+        "Agora digite o <b>ID da Regulação</b> (8 dígitos):\n\n📌 <i>Confira no seu comprovante de agendamento.</i>",
+        parse_mode="HTML",
+    )
+    return ETAPA_REGULACAO  # <-- Retorna para a etapa do ID
 
 
 async def callback_reuso_dados(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -489,14 +521,14 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # ✅ Salva o número da regulação
     context.user_data["numero_regulacao"] = num_reg
 
-    # ✅ FORA DO TRY/EXCEPT — sempre pede a especialidade no fluxo normal
+    # ---------------------------------------------------------
+    # 🛑 MUDANÇA AQUI: Agora pede o NOME em vez da Especialidade
+    # ---------------------------------------------------------
     await update.message.reply_text(
-        "Agora informe a <b>Especialidade</b>\n"
-        "<i>(Ex: Cardiologista / Ultrassonografia)</i>\n\n"
-        "Se não souber, digite <code>0</code> para pular.",
+        "Qual o nome completo do paciente?",
         parse_mode="HTML",
     )
-    return ETAPA_CBO
+    return ETAPA_NOME  # <-- Retorna para a etapa do Nome
 
 
 async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -688,7 +720,9 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # 3. Envia o Menu Principal
     print("DEBUG 7: Enviando menu principal...")
-    await context.bot.send_message(chat_id=chat_id, text="O que deseja fazer agora?", reply_markup=obter_teclado_menu(update.effective_user.id))
+    await context.bot.send_message(
+        chat_id=chat_id, text="O que deseja fazer agora?", reply_markup=obter_teclado_menu(update.effective_user.id)
+    )
 
     # 4. Marketing: oferta pós-1ª regulação
     try:
