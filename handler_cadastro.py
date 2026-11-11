@@ -60,6 +60,7 @@ async def receber_celular(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    print("DEBUG: ENTROU NA FUNÇÃO RECEBER_NASCIMENTO")
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
@@ -73,7 +74,7 @@ async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE)
         data_obj = datetime.strptime(texto_data, "%d/%m/%Y")
         context.user_data["nascimento"] = data_obj.strftime("%Y-%m-%d")
 
-        # Segue o fluxo para a próxima etapa (Provavelmente Especialidade ou ID)
+        # Segue o fluxo para a próxima etapa (Especialidade)
         await update.message.reply_text(
             "Agora informe a <b>Especialidade</b> da consulta/exame.\n"
             "<i>(ex: CARDIOLOGISTA, ORTOPEDISTA)</i>\n\n"
@@ -83,7 +84,7 @@ async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ETAPA_CBO
 
     except ValueError:
-        # Se a data for inválida (ex: 31/02/2000), avisa o usuário
+        # Se a data for inválida, avisa o usuário e pede de novo
         await update.message.reply_text("⚠️ Data inválida. Digite novamente no formato DD/MM/AAAA:")
         return ETAPA_NASCIMENTO
     except Exception as e:
