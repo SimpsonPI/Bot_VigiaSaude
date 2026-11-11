@@ -333,12 +333,25 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     except Exception as e:
         print(f"ERRO no bloco do SUS: {e}")
 
-    # --- AQUI ESTÁ A MUDANÇA: Pede o ID da Regulação em vez do Nome ---
-    await update.message.reply_text(
-        "Agora digite o <b>ID da Regulação</b> (8 dígitos):\n\n📌 <i>Confira no seu comprovante de agendamento.</i>",
-        parse_mode="HTML",
+        # --- PEDE O ID E ENVIA A IMAGEM ILUSTRATIVA ---
+    import os  # Garante que o 'os' está importado
+
+    texto_id = (
+        "Agora digite o <b>ID da Regulação</b> (8 dígitos):\n\n"
+        "📌 <i>Confira no seu comprovante de agendamento, conforme o exemplo abaixo:</i>"
     )
-    return ETAPA_REGULACAO  # <-- Retorna para a etapa do ID
+
+    caminho_imagem = os.path.join(os.path.dirname(__file__), "comprovante_sus.jpg")
+
+    try:
+        with open(caminho_imagem, "rb") as foto:
+            await update.message.reply_photo(photo=foto, caption=texto_id, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Erro ao enviar imagem no SUS: {e}")
+        # Se a imagem falhar, envia apenas o texto
+        await update.message.reply_text(texto_id, parse_mode="HTML")
+
+    return ETAPA_REGULACAO
 
 
 async def callback_reuso_dados(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -456,20 +469,21 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return ETAPA_REGULACAO
 
-    # ✅ Rate limit de cadastros (5/dia)
-    from mitigacao_cadastro import pode_cadastrar, registrar_cadastro
+    # --- BYPASS ADMIN ---
+    from config import is_admin
 
-    chat_id = str(update.effective_user.id)
-    pode, _motivo, _restantes = pode_cadastrar(chat_id)
-    if not pode:
-        await update.message.reply_text(
-            "⏳ <b>Limite diário de cadastros atingido!</b>\n\n"
-            "Você já cadastrou <b>5 regulações</b> hoje.\n\n"
-            "💡 <i>Você pode cadastrar mais amanhã ou usar /corrigir para editar regulações existentes.</i>",
-            parse_mode="HTML",
-        )
-        context.user_data.clear()
-        return ConversationHandler.END
+    is_adm = is_admin(update.effective_user.id)
+
+    if not is_adm:
+        # ✅ Rate limit de cadastros (5/dia) - SÓ PARA USUÁRIO COMUM
+        from mitigacao_cadastro import pode_cadastrar, registrar_cadastro
+
+        chat_id = str(update.effective_user.id)
+        pode, _motivo, _restantes = pode_cadastrar(chat_id)
+        if not pode:
+            await update.message.reply_text("⏳ <b>Limite diário de cadastros atingido!</b>", parse_mode="HTML")
+            context.user_data.clear()
+            return ConversationHandler.END
 
     # ✅ Verifica duplicata global (mesmo usuário ou outro)
     try:
