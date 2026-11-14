@@ -3,6 +3,7 @@ import os
 import logging
 from bot_seguranca import safe_callback
 from utils import obter_teclado_menu
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 import re

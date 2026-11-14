@@ -1,15 +1,51 @@
+import os
 import re
 import random
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
-from rate_limiter import consultar_com_limite
 import httpx
 from bs4 import BeautifulSoup
 from telegram.helpers import escape_markdown
 from config import URL_BUSCA_FMS, SCRAPER_KEY
 
+
 logger = logging.getLogger(__name__)
+
+from datetime import datetime, timezone, timedelta
+
+# Margem de segurança após o horário marcado antes de considerar "Vencida"
+MARGEM_VENCIMENTO_HORAS = 3
+
+
+def _status_corrigido(situacao: str | None, data_consulta: str | None) -> str | None:
+    """
+    Corrige o status com base na data.
+    Se o portal diz 'Agendada' mas a data/hora já passou (com margem),
+    retorna 'Vencida'.
+    Formato esperado de data_consulta: 'DD/MM/YYYY - HH:MM'
+    """
+    if not situacao or not data_consulta:
+        return situacao
+
+    if str(situacao).strip().lower() != "agendada":
+        return situacao
+
+    try:
+        partes = str(data_consulta).split(" - ")
+        data_str = partes[0].strip()
+        hora_str = partes[1].strip() if len(partes) > 1 else "23:59"
+
+        dt_consulta = datetime.strptime(f"{data_str} {hora_str}", "%d/%m/%Y %H:%M")
+
+        # Fuso Brasília (UTC-3)
+        agora_br = (datetime.now(timezone.utc) - timedelta(hours=3)).replace(tzinfo=None)
+
+        if dt_consulta + timedelta(hours=MARGEM_VENCIMENTO_HORAS) < agora_br:
+            return "Vencida"
+    except Exception as e:
+        logger.warning(f"Falha ao corrigir status com data '{data_consulta}': {e}")
+
+    return situacao
 
 
 def _extrair_valor_campo_fms(soup: BeautifulSoup, rotulo: str) -> str | None:
@@ -77,7 +113,7 @@ def _extrair_dados_html(soup: BeautifulSoup) -> dict:
     alerta_concatenado = " ".join(todos_avisos) if todos_avisos else ""
     alerta_texto = _limpar_texto_alerta(alerta_concatenado) or None
 
-    # 2. Varredura de Títulos
+    # 2. Varredura de Títulos (Nova abordagem: busca pelo texto do título e pega o texto ao lado)
     campos_brutos = {}
     dados_mapeados = {
         "data_consulta": None,
@@ -90,45 +126,47 @@ def _extrair_dados_html(soup: BeautifulSoup) -> dict:
         "previsao_atendimento": None,
     }
 
-    titulos = card.find_all(["h4", "h5"], class_=re.compile(r"card-title", re.I)) or card.find_all(["h4", "h5"])
+    # Procura por qualquer tag de título ou parágrafo que contenha os rótulos que queremos
+    for elem in soup.find_all(["h4", "h5", "p", "span", "strong", "b"]):
+        rotulo = elem.get_text(strip=True).lower()
 
-    for elem in titulos:
-        rotulo = elem.get_text(strip=True)
-        if not rotulo or "_" in rotulo:
+        # Ignora textos muito longos (que não são rótulos)
+        if len(rotulo) > 50:
             continue
 
-        p = elem.find_next_sibling(["p", "span", "div"])
-        if not p and elem.parent:
-            p = elem.parent.find(["p", "span", "div"], class_=re.compile(r"card-text|badge", re.I))
+        # Tenta pegar o valor no próximo elemento irmão, ou no pai, ou no próximo elemento da página
+        valor_elem = elem.find_next_sibling(["p", "div", "span", "h4", "h5"]) or elem.find_next(["p", "div", "span"])
 
-        if not p:
+        if not valor_elem:
             continue
 
-        valor = re.sub(r"\s+", " ", p.get_text(" ", strip=True)).strip()
-        if not valor:
+        valor = re.sub(r"\s+", " ", valor_elem.get_text(" ", strip=True)).strip()
+
+        # Se o valor for vazio ou for o próprio título, tenta o próximo
+        if not valor or valor.lower() == rotulo:
             continue
 
-        campos_brutos[rotulo] = valor
-        rotulo_lower = rotulo.lower()
-
-        if "data e hora" in rotulo_lower:
-            dados_mapeados["data_consulta"] = valor
-        elif "autorização" in rotulo_lower:
-            dados_mapeados["autorizacao"] = valor
-        elif "endereço" in rotulo_lower:
-            dados_mapeados["endereco"] = valor
-        elif "estabelecimento" in rotulo_lower:
-            dados_mapeados["estabelecimento"] = valor
-        elif "telefone" in rotulo_lower:
-            dados_mapeados["telefone"] = valor
-        elif "situação" in rotulo_lower:
+        # Mapeia os campos
+        if "situação" in rotulo:
             dados_mapeados["situacao"] = valor
-        elif "posição" in rotulo_lower or "fila" in rotulo_lower:
+        elif "posição" in rotulo and "fila" in rotulo:
             dados_mapeados["posicao_fila"] = valor
-        elif "previsão" in rotulo_lower:
+        elif "previsão" in rotulo and "atendimento" in rotulo:
             dados_mapeados["previsao_atendimento"] = valor
+        elif "data e hora" in rotulo:
+            dados_mapeados["data_consulta"] = valor
+        elif "autorização" in rotulo:
+            dados_mapeados["autorizacao"] = valor
+        elif "endereço" in rotulo:
+            dados_mapeados["endereco"] = valor
+        elif "estabelecimento" in rotulo:
+            dados_mapeados["estabelecimento"] = valor
+        elif "telefone" in rotulo:
+            dados_mapeados["telefone"] = valor
 
-    # 3. Determinação da Situação
+        campos_brutos[elem.get_text(strip=True)] = valor
+
+        # 3. Determinação da Situação (Ajustado para ler TUDO)
     situacao = dados_mapeados["situacao"] or campos_brutos.get("Situação") or _extrair_valor_campo_fms(soup, "Situação")
 
     if not situacao:
@@ -138,19 +176,28 @@ def _extrair_dados_html(soup: BeautifulSoup) -> dict:
             situacao = "Informada no portal"
 
     dados_mapeados["situacao"] = situacao
-    dados_mapeados["posicao_fila"] = (
+
+    # 🛑 AQUI: Tenta ler Posição e Previsão mesmo que o agendamento exista
+    posicao = (
         dados_mapeados["posicao_fila"]
         or campos_brutos.get("Posição da Fila")
+        or campos_brutos.get("Posição")
         or _extrair_valor_campo_fms(soup, "Posição da Fila")
         or "Não informada"
     )
-    dados_mapeados["previsao_atendimento"] = (
+
+    previsao = (
         dados_mapeados["previsao_atendimento"]
         or campos_brutos.get("Previsão de atendimento")
+        or campos_brutos.get("Previsão")
         or _extrair_valor_campo_fms(soup, "Previsão de atendimento")
         or "Não informada"
     )
 
+    dados_mapeados["posicao_fila"] = posicao
+    dados_mapeados["previsao_atendimento"] = previsao
+
+    # 🛑 ESTE BLOCO ESTAVA FALTANDO:
     return {
         "sucesso": True,
         "encontrado": True,
@@ -185,78 +232,38 @@ def nome_paciente_exibicao(nome: str | None) -> str:
     return nome.strip()
 
 
-MARGEM_VENCIMENTO_HORAS = 3
+async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict:
+    atraso = random.uniform(1.0, 2.0)
+    await asyncio.sleep(atraso)
 
-
-def _status_corrigido(situacao: str | None, data_consulta: str | None) -> str | None:
-    """
-    Se o portal diz 'Agendada' mas a data/hora já passou (com margem),
-    retorna 'Vencida'.
-    Formato esperado: 'DD/MM/YYYY - HH:MM'
-    """
-    if not situacao or not data_consulta:
-        return situacao
-    if str(situacao).strip().lower() != "agendada":
-        return situacao
-    try:
-        partes = str(data_consulta).split(" - ")
-        data_str = partes[0].strip()
-        hora_str = partes[1].strip() if len(partes) > 1 else "23:59"
-        dt_consulta = datetime.strptime(f"{data_str} {hora_str}", "%d/%m/%Y %H:%M")
-        agora_br = (datetime.now(timezone.utc) - timedelta(hours=3)).replace(tzinfo=None)
-        if dt_consulta + timedelta(hours=MARGEM_VENCIMENTO_HORAS) < agora_br:
-            return "Vencida"
-    except Exception as e:
-        logging.warning(f"Falha ao corrigir status com data '{data_consulta}': {e}")
-    return situacao
-
-
-async def consultar_status_fms(numero_reg: str, sus: str = "") -> dict:
-    """Consulta o portal da FMS e retorna os dados ou a mensagem de erro."""
-    import urllib.parse
-    from bs4 import BeautifulSoup
-
-    url_fms_target = f"https://sistema.fms.pmt.pi.gov.br/regulacao/consultar?regulacao={numero_reg}&sus={sus}"
+    url_fms_target = (
+        f"https://agendamentos.sus.fms.pmt.pi.gov.br/detail_scheduling/index?utf8=%E2%9C%93&number_id={numero_reg}"
+    )
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 
-    # --- 1ª TENTATIVA: ACESSO DIRETO ---
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=25.0, headers=headers) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=45.0, headers=headers) as client:
             resposta = await client.get(url_fms_target)
-
-            if resposta.status_code == 200:
+            if resposta.status_code == 200 and "nenhum registro" not in resposta.text.lower():
                 soup = BeautifulSoup(resposta.text, "html.parser")
-                texto_pagina = soup.get_text().lower()
-
-                # 🛑 VERIFICA O AVISO DE ID INVÁLIDO (O texto exato que você viu no portal)
-                if "verifique se o id ou da solicitação de regulação" in texto_pagina:
-                    return {
-                        "sucesso": False,
-                        "erro": "O ID ou o número da solicitação de regulação não foi encontrado no portal. Verifique se o número no seu comprovante está correto.",
-                    }
-
-                if "nenhum registro" in texto_pagina or "não encontrado" in texto_pagina:
-                    return {"sucesso": False, "erro": f"A regulação {numero_reg} não foi encontrada no portal da FMS."}
-
-                # Se chegou até aqui, extrai os dados normalmente
                 return _extrair_dados_html(soup)
-
     except Exception as e:
         logger.info(f"Acesso direto à FMS falhou ou bloqueou ({e}). Acionando ScraperAPI...")
-
-    # --- 2ª TENTATIVA: VIA SCRAPERAPI ---
-    from config import SCRAPER_KEY  # Ajuste o import se necessário
 
     if not SCRAPER_KEY:
         return {
             "sucesso": False,
-            "erro": "Erro de configuração na chave do ScraperAPI.",
+            "mensagem": "Erro de configuração na chave do ScraperAPI.",
         }
 
-    scraper_url = f"http://api.scraperapi.com?api_key={SCRAPER_KEY}&url={urllib.parse.quote(url_fms_target)}"
-    max_tentativas = 3
+    scraper_url = f"http://api.scraperapi.com?api_key={SCRAPER_KEY}&url={url_fms_target}"
 
     for tentativa in range(1, max_tentativas + 1):
         try:
@@ -269,42 +276,39 @@ async def consultar_status_fms(numero_reg: str, sus: str = "") -> dict:
                         continue
                     return {
                         "sucesso": False,
-                        "erro": f"Erro HTTP {resposta.status_code} ao consultar o portal.",
+                        "mensagem": f"Erro HTTP {resposta.status_code}",
                     }
 
                 soup = BeautifulSoup(resposta.text, "html.parser")
                 texto_pagina = soup.get_text().lower()
 
-                # 🛑 VERIFICA O AVISO DE ID INVÁLIDO NO SCRAPERAPI TAMBÉM
-                if "verifique se o id ou da solicitação de regulação" in texto_pagina:
-                    return {
-                        "sucesso": False,
-                        "erro": "O ID ou o número da solicitação de regulação não foi encontrado no portal. Verifique se o número no seu comprovante está correto.",
-                    }
-
                 if "nenhum registro" in texto_pagina or "não encontrado" in texto_pagina:
                     return {
                         "sucesso": False,
-                        "erro": f"A regulação {numero_reg} não foi encontrada no portal da FMS.",
+                        "mensagem": f"⚠️ A regulação *{numero_reg}* não foi encontrada no portal da FMS.",
                     }
 
                 return _extrair_dados_html(soup)
 
         except Exception as e:
-            logger.error(f"Erro na tentativa {tentativa} via ScraperAPI: {e}")
-            if tentativa == max_tentativas:
+            logger.error(f"Erro na tentativa {tentativa} do ScraperAPI: {e}")
+            if tentativa < max_tentativas:
+                await asyncio.sleep(2)
+            else:
                 return {
                     "sucesso": False,
-                    "erro": "Não foi possível conectar ao portal da FMS após várias tentativas. Tente novamente mais tarde.",
+                    "mensagem": f"Erro de conexão com a FMS: {e}",
                 }
-            await asyncio.sleep(2)
 
-    return {"sucesso": False, "erro": "Erro desconhecido ao consultar a regulação."}
+    return {
+        "sucesso": False,
+        "mensagem": "Tempo limite de conexão excedido ao acessar a FMS.",
+    }
 
 
 async def consultar_status_sus(numero_reg: str) -> str | None:
     try:
-        resultado = await consultar_com_limite(numero_reg)
+        resultado = await consultar_status_fms(numero_reg)
         if isinstance(resultado, dict) and resultado.get("sucesso"):
             return resultado.get("situacao") or "Informada no portal"
         return None
