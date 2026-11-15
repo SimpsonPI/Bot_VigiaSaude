@@ -198,10 +198,17 @@ def _extrair_dados_html(soup: BeautifulSoup) -> dict:
     dados_mapeados["previsao_atendimento"] = previsao
 
     # 🛑 ESTE BLOCO ESTAVA FALTANDO:
+    # 🛑 FORÇANDO O STATUS CORRETO NO RETORNO
+    status_final = situacao
+
+    # Só força "Em fila" se a posição for um número real (ex: 20, 3423)
+    if posicao and str(posicao).strip().isdigit():
+        status_final = "Em fila"
+
     return {
         "sucesso": True,
         "encontrado": True,
-        "situacao": _status_corrigido(situacao, dados_mapeados["data_consulta"]),
+        "situacao": _status_corrigido(status_final, dados_mapeados["data_consulta"]),
         "posicao_fila": dados_mapeados["posicao_fila"],
         "previsao_atendimento": dados_mapeados["previsao_atendimento"],
         "data_consulta": dados_mapeados["data_consulta"],
@@ -211,7 +218,7 @@ def _extrair_dados_html(soup: BeautifulSoup) -> dict:
         "telefone": dados_mapeados["telefone"],
         "alerta_fms": alerta_texto,
         "campos": campos_brutos,
-        "status_resumido": f"Situação: {situacao}",
+        "status_resumido": f"Situação: {status_final}",
     }
 
 
@@ -345,7 +352,11 @@ def montar_mensagem_regulacao(
 
         # 🔄 Normaliza textos do FMS para algo mais claro ao usuário
         _sit_lower = str(situacao).strip().lower()
-        if "informada" in _sit_lower:
+
+        # 🛑 FORÇA "EM FILA" SE HOUVER POSIÇÃO
+        if posicao != "Não informada" and posicao is not None:
+            situacao = "Em fila"
+        elif "informada" in _sit_lower:
             situacao = "Em fila"
         elif "agendada" in _sit_lower:
             situacao = "Agendada"
