@@ -120,7 +120,7 @@ async def coletar_contexto_sistema() -> str:
                 linhas.append("• Detalhes das ativas:")
                 for e in ativas[:5]:
                     r = calcular_resultado(e)
-                    linhas.append(f'  - #{e["id"]}: "{e.get("pergunta", "")[:60]}" ' f"({r['total']} voto(s))")
+                    linhas.append(f'  - #{e["id"]}: "{e.get("pergunta", "")[:60]}" ({r["total"]} voto(s))')
             else:
                 linhas.append("• Nenhuma enquete ativa no momento.")
 
@@ -234,8 +234,9 @@ async def executar_acao_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
         flush=True,
     )
 
-    if context.user_data.get("_em_fluxo_admin"):
-        print(f"🔵 DEBUG IA ADMIN: bloqueada (em fluxo)", flush=True)
+    # Bloqueia a IA APENAS se estiver no meio do cadastro
+    if context.user_data.get("_em_fluxo_admin") == "cadastro":
+        print(f"🔵 DEBUG IA ADMIN: bloqueada (em cadastro)", flush=True)
         return
 
     user_message = update.message.text
