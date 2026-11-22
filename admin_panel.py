@@ -1,4 +1,6 @@
 # admin_panel.py
+import asyncio
+from database import supabase
 import logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
@@ -23,7 +25,6 @@ def _teclado_principal() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("📊 Relatórios", callback_data="painel_relatorios"),
                 InlineKeyboardButton("🛡️ Segurança", callback_data="painel_seguranca"),
                 InlineKeyboardButton("📢 Comunicação", callback_data="painel_comunicacao"),
             ],
@@ -31,6 +32,9 @@ def _teclado_principal() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("📋 Enquetes", callback_data="painel_enquetes"),
                 InlineKeyboardButton("🔧 Sistema", callback_data="painel_sistema"),
                 InlineKeyboardButton("👑 Planos", callback_data="painel_planos"),
+            ],
+            [
+                InlineKeyboardButton("🚧 Alerta de Manutenção", callback_data="admin_manutencao"),  # <-- NOVO
             ],
             [InlineKeyboardButton("❌ Fechar Painel", callback_data="painel_fechar")],
         ]
@@ -145,78 +149,88 @@ async def comando_painel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def callback_painel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processa os cliques no painel."""
     query = update.callback_query
     await query.answer()
 
+    data = query.data
     if not _eh_admin(query.from_user.id):
         await query.edit_message_text("⛔ Acesso negado.")
         return
 
-    data = query.data
-
     if data == "painel_fechar":
-        await query.edit_message_text(
-            "🎛️ Painel fechado.\n\nUse <code>/painel</code> para reabrir.",
-            parse_mode="HTML",
-        )
+        await query.edit_message_text("🎛️ Painel fechado.\n\nUse <code>/painel</code> para reabrir.", parse_mode="HTML")
         return
 
     if data == "painel_inicio":
-        texto = (
-            "🎛️ <b>PAINEL DE CONTROLE ADMINISTRATIVO</b>\nVigiaSaúde — Central de Operações\n\nSelecione uma categoria:"
-        )
+        texto = "🎛️ <b>PAINEL DE CONTROLE ADMINISTRATIVO</b>\nVigiaSaúde Premium — Central de Operações\n\nSelecione uma categoria:"
         await query.edit_message_text(texto, parse_mode="HTML", reply_markup=_teclado_principal())
         return
 
-        # ─── Atalhos: estatísticas e ativos ───
-        # ─── Atalhos: estatísticas e ativos (funciona via callback) ───
-    if data == "painel_estatisticas":
+    if data == "admin_manutencao":
         try:
-            from database_atendimento import buscar_estatisticas_admin_periodo
-
-            stats = await buscar_estatisticas_admin_periodo()
-
-            # Extrai os números principais
-            hoje = stats.get("hoje", {}) if isinstance(stats, dict) else {}
-            total_regs = hoje.get("regulacoes", stats.get("total_regulacoes", "—")) if isinstance(stats, dict) else "—"
-            total_users = stats.get("total_assinaturas_ativas", "—") if isinstance(stats, dict) else "—"
-
-            texto = (
-                "📊 <b>ESTATÍSTICAS RÁPIDAS</b>\n\n"
-                f"• Usuários ativos: <b>{total_users}</b>\n"
-                f"• Regulações hoje: <b>{total_regs}</b>\n\n"
-                "<i>Para relatório completo, use /estatisticas no chat.</i>"
-            )
-            await query.edit_message_text(texto, parse_mode="HTML", reply_markup=_teclado_voltar())
+            res = supabase.table("assinaturas").select("chat_id").execute()
+            usuarios_unicos = list({str(r["chat_id"]) for r in res.data if r.get("chat_id")})
         except Exception as e:
-            await query.edit_message_text(f"❌ Erro ao buscar estatísticas: {e}")
+            await query.message.reply_text(f"❌ Erro ao buscar usuários: {e}")
+            return
+
+        mensagem = (
+            "🛠️ <b>Aviso de Manutenção</b>\n\n"
+            "Olá! Estamos passando por uma rápida manutenção para melhorar o nosso sistema. "
+            "<b>Desculpe o transtorno</b>, em breve estaremos de volta com tudo funcionando perfeitamente para você!"
+        )
+
+        await query.message.reply_text(f"⏳ Enviando alerta para {len(usuarios_unicos)} usuários...")
+
+        sucesso = 0
+        for uid in usuarios_unicos:
+            try:
+                await context.bot.send_message(chat_id=uid, text=mensagem, parse_mode="HTML")
+                sucesso += 1
+                await asyncio.sleep(0.05)
+            except Exception:
+                pass
+
+        await query.message.reply_text(f"✅ Alerta enviado com sucesso para {sucesso} usuários.")
         return
 
-    if data == "painel_ativos":
-        try:
-            from database import supabase
+    # Mapeamento de textos normais do painel
+    mapeamento = {
+        "painel_relatorios": _texto_relatorios,
+        "painel_planos": _texto_planos,
+        "painel_seguranca": _texto_seguranca,
+        "painel_comunicacao": _texto_comunicacao,
+        "painel_enquetes": _texto_enquetes,
+        "painel_sistema": _texto_sistema,
+    }
 
-            r = (
-                supabase.table("assinaturas")
-                .select("chat_id, tipo_plano, status")
-                .eq("status", "ativo")
-                .limit(10)
-                .execute()
-            )
-            lista = r.data or []
+    if data in mapeamento:
+        texto = mapeamento[data]()
+        await query.edit_message_text(texto, parse_mode="HTML", reply_markup=_teclado_voltar())
+        return
 
-            if not lista:
-                texto = "ℹ️ Nenhuma assinatura ativa no momento."
-            else:
-                linhas = ["📋 <b>ÚLTIMOS ATIVOS (máx. 10)</b>\n"]
-                for i, u in enumerate(lista, 1):
-                    linhas.append(f"{i}. <code>{u.get('chat_id')}</code> · {u.get('tipo_plano') or '—'}")
-                texto = "\n".join(linhas)
+        # 2. Define a mensagem
+        mensagem = (
+            "🛠️ <b>Aviso de Manutenção</b>\n\n"
+            "Olá! Estamos passando por uma rápida manutenção para melhorar o nosso sistema. "
+            "<b>Desculpe o transtorno</b>, em breve estaremos de volta com tudo funcionando perfeitamente para você!"
+        )
 
-            await query.edit_message_text(texto, parse_mode="HTML", reply_markup=_teclado_voltar())
-        except Exception as e:
-            await query.edit_message_text(f"❌ Erro ao buscar ativos: {e}")
+        # 3. Envia para todos com pausa
+        print(f"DEBUG MANUTENÇÃO: Encontrou {len(usuarios_unicos)} usuários.", flush=True)
+        sucesso = 0
+
+        await query.message.reply_text(f"⏳ Enviando alerta para {len(usuarios_unicos)} usuários...")
+
+        for uid in usuarios_unicos:
+            try:
+                await context.bot.send_message(chat_id=uid, text=mensagem, parse_mode="HTML")
+                sucesso += 1
+                await asyncio.sleep(0.05)
+            except Exception:
+                pass
+
+        await query.message.reply_text(f"✅ Alerta enviado com sucesso para {sucesso} usuários.")
         return
 
     mapeamento = {

@@ -324,7 +324,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_cb_enq_detalhado, pattern="^admin_enq_detalhado$"))
     app.add_handler(CallbackQueryHandler(admin_cb_enq_listar, pattern="^admin_enq_listar$"))
     app.add_handler(CallbackQueryHandler(admin_cb_enq_info, pattern="^admin_enq_info$"))
-    app.add_handler(CallbackQueryHandler(callback_painel, pattern="^painel_"))  # â† por Ãºltimo
+    app.add_handler(CallbackQueryHandler(callback_painel, pattern="^(painel_|admin_manutencao)"))
     app.add_handler(CallbackQueryHandler(mostrar_termos_uso, pattern="^termos_uso$"))
     app.add_handler(CommandHandler("estatisticas", comando_estatisticas))
     app.add_handler(CommandHandler("ativos", comando_listar_ativos))
@@ -412,6 +412,7 @@ def main():
 
     logger.info("Iniciando o bot VigiaSaude via polling...")
     app.add_error_handler(global_error_handler)
+    print("🚀 BOT INICIADO E ESCUTANDO...", flush=True)
     app.run_polling(drop_pending_updates=False)
 
 
