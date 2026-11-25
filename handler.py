@@ -1279,6 +1279,16 @@ async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
             status_ant = (reg.get("status_anterior") or "").strip()
             posicao_ant = (reg.get("posicao_anterior") or "").strip()
 
+            # 🛑 FILTRO DE SEGURANÇA: Ignora regulações canceladas, vencidas ou concluídas
+            # ATENÇÃO: Confirme se no Premium a coluna do aviso se chama "aviso_portal". Se for outro nome (ex: "aviso_fms"), troque aqui.
+            aviso_atual = reg.get("aviso_portal", "")
+            texto_verificacao = f"{status_ant} {aviso_atual}".lower()
+
+            if any(termo in texto_verificacao for termo in ["cancelad", "vencid", "concluid", "atendid"]):
+                logger.info(f"⏭️ {num_reg} (chat {chat_id}): ignorado na varredura (Cancelada/Vencida).")
+                ignoradas += 1
+                continue
+
             if not num_reg or not chat_id:
                 continue
 

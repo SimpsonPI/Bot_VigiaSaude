@@ -76,7 +76,6 @@ async def exibir_resposta_faq(update: Update, context: ContextTypes.DEFAULT_TYPE
         ),
         "faq_consultar": (
             "🔍 <b>Como consultar minhas regulações?</b>\n\n"
-            "• Para ver todas as suas regulações: digite <b>/verificar_todos</b>.\n"
             "• Para consultar uma regulação específica: digite <b>/verificar_especifico</b>."
         ),
         "faq_id": (

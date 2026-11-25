@@ -5,3 +5,4 @@ main_backup.py
 __pycache__/
 *.pyc
 teaser_data.json
+*.pickle
